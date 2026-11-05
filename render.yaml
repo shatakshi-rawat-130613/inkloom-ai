@@ -1,0 +1,29 @@
+# Render Blueprint specification for Inkloom AI Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: inkloom-backend
+    env: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: CORS_ORIGINS
+        value: "http://localhost:5173,https://*.vercel.app"
+      - key: MAX_CONTENT_CHARS
+        value: "10000"
+      - key: ANALYZE_RATE_LIMIT_PER_MINUTE
+        value: "10"
