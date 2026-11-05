@@ -13,6 +13,12 @@ from typing import Sequence
 
 from app.enums import FindingCategory, FindingSource, FindingType, Severity
 from app.schemas import BrandKnowledge, FindingDraft, Guideline, Term
+from app.services.relevance import (
+    BrandRelevance,
+    assess_brand_relevance,
+    make_insufficient_context_finding,
+    make_unrelated_finding,
+)
 from app.validation import build_evidence, locate, sanitize_text
 
 # Regex patterns for deterministic checks
@@ -108,6 +114,12 @@ def run_rule_engine(
     Returns:
         tuple of (findings, positive_observations)
     """
+    relevance = assess_brand_relevance(content, knowledge)
+    if relevance.status == BrandRelevance.UNRELATED:
+        return [make_unrelated_finding(content, knowledge)], []
+    if relevance.status == BrandRelevance.INSUFFICIENT_CONTEXT:
+        return [make_insufficient_context_finding(content, knowledge)], []
+
     findings: list[FindingDraft] = []
     positive_observations: list[str] = []
 

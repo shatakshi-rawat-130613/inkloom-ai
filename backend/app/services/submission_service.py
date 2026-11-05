@@ -388,7 +388,8 @@ def analyze_submission(db: Session, submission_id: UUID) -> AnalysisRunSchema:
         )
 
     knowledge = brand_to_knowledge(sub.brand)
-    analysis_res = analyze_content(current_ver.body, knowledge)
+    content_type_str = sub.content_type.value if hasattr(sub.content_type, "value") else str(sub.content_type)
+    analysis_res = analyze_content(current_ver.body, knowledge, title=sub.title, content_type=content_type_str)
 
     run = AnalysisRun(
         submission_id=sub.id,

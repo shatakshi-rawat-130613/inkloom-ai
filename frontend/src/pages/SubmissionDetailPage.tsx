@@ -215,6 +215,9 @@ export function SubmissionDetailPage() {
 
   const findings = activeAnalysisRun?.findings || []
   const positiveObservations = activeAnalysisRun?.positive_observations || []
+  const isUnrelatedToBrand =
+    Boolean(activeAnalysisRun?.summary?.startsWith('UNRELATED TO ACTIVE BRAND')) ||
+    findings.some((f) => f.reference_note?.includes('UNRELATED_TO_BRAND'))
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 space-y-8">
@@ -437,12 +440,43 @@ export function SubmissionDetailPage() {
             <div className="bg-ivory border border-parchment-deep rounded-sm p-6 space-y-6">
               {/* Overall Status Banner */}
               <div className="space-y-2">
+                {isUnrelatedToBrand && (
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                      Brand Relevance
+                    </span>
+                    <span className="px-2 py-0.5 rounded-sm font-mono text-[11px] font-bold uppercase tracking-wider bg-terracotta/15 text-terracotta border border-terracotta/30">
+                      UNRELATED TO ACTIVE BRAND
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-ink-soft">
                     Compliance Status
                   </span>
                   <OverallBadge status={activeAnalysisRun.overall_status} />
                 </div>
+
+                {isUnrelatedToBrand && (
+                  <div className="p-4 bg-terracotta/10 border border-terracotta/30 rounded-sm space-y-2 my-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs uppercase tracking-wider font-semibold text-terracotta">
+                        Brand Relevance Assessment
+                      </span>
+                      <span className="text-[11px] font-medium text-ochre bg-ochre-soft/40 px-2 py-0.5 rounded-sm border border-ochre/30">
+                        Active Brand: {submission.brand_name || 'LumaCare'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-ink leading-relaxed">
+                      The submitted content appears to describe a brand, product category or industry that is unrelated to {submission.brand_name || 'LumaCare'}, the currently active skincare brand. Its compliance cannot be reliably assessed against {submission.brand_name || 'LumaCare'}'s approved guidelines and product information.
+                    </p>
+                    <div className="text-xs text-ink-soft pt-1">
+                      <span className="font-semibold text-ink">Recommendation: </span>
+                      Submit content relevant to {submission.brand_name || 'LumaCare'} or provide additional context to clarify its relationship with the active brand.
+                    </div>
+                  </div>
+                )}
 
                 <p className="text-xs text-ink-soft leading-relaxed">
                   {activeAnalysisRun.summary}
@@ -489,8 +523,17 @@ export function SubmissionDetailPage() {
               {/* Findings Cards List */}
               {findings.length === 0 ? (
                 <div className="text-center py-8 text-xs text-ink-soft">
-                  <p className="font-serif text-sm font-semibold text-sage">No violations detected</p>
-                  <p className="mt-1">Content meets approved brand guidelines and factual standards.</p>
+                  {isUnrelatedToBrand ? (
+                    <>
+                      <p className="font-serif text-sm font-semibold text-ochre">Unrelated Content</p>
+                      <p className="mt-1">Content does not relate to active brand; no brand-specific violations applied.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-serif text-sm font-semibold text-sage">No violations detected</p>
+                      <p className="mt-1">Content meets approved brand guidelines and factual standards.</p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">

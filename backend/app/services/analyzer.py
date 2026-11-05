@@ -17,6 +17,12 @@ from app.config import get_settings
 from app.enums import AIStatus, FindingCategory, FindingSource, OverallStatus
 from app.schemas import BrandKnowledge, FindingDraft
 from app.services.gemini_service import run_gemini_analysis
+from app.services.relevance import (
+    BrandRelevance,
+    assess_brand_relevance,
+    make_insufficient_context_finding,
+    make_unrelated_finding,
+)
 from app.services.rule_engine import run_rule_engine
 from app.validation import derive_overall_status, derive_requires_human_review
 
@@ -67,10 +73,56 @@ def _deduplicate_findings(
 def analyze_content(
     content: str,
     knowledge: BrandKnowledge,
+    title: str | None = None,
+    content_type: str | None = None,
 ) -> CompleteAnalysisResult:
     """Runs complete hybrid compliance analysis on content against BrandKnowledge."""
     start_time = time.perf_counter()
     settings = get_settings()
+
+    # Step 0: Assess Brand Relevance
+    relevance = assess_brand_relevance(content, knowledge, title=title, content_type=content_type)
+
+    if relevance.status == BrandRelevance.UNRELATED:
+        finding = make_unrelated_finding(content, knowledge)
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        summary = (
+            f"UNRELATED TO ACTIVE BRAND: The submitted content appears to describe a brand, product category "
+            f"or industry that is unrelated to {knowledge.brand_name}, the currently active skincare brand. "
+            f"Its compliance cannot be reliably assessed against {knowledge.brand_name}'s approved guidelines "
+            f"and product information."
+        )
+        ai_stat = AIStatus.OK if settings.gemini_api_key else AIStatus.DISABLED
+        return CompleteAnalysisResult(
+            overall_status=OverallStatus.NEEDS_REVIEW,
+            summary=summary,
+            positive_observations=[],
+            requires_human_review=True,
+            ai_status=ai_stat,
+            model_name=settings.gemini_model if ai_stat == AIStatus.OK else None,
+            rule_engine_version=RULE_ENGINE_VERSION,
+            knowledge_snapshot=knowledge.model_dump(mode="json"),
+            duration_ms=duration_ms,
+            findings=[finding],
+        )
+
+    if relevance.status == BrandRelevance.INSUFFICIENT_CONTEXT:
+        finding = make_insufficient_context_finding(content, knowledge)
+        duration_ms = int((time.perf_counter() - start_time) * 1000)
+        summary = "Content requires human review: insufficient brand or product context for a reliable compliance assessment."
+        ai_stat = AIStatus.OK if settings.gemini_api_key else AIStatus.DISABLED
+        return CompleteAnalysisResult(
+            overall_status=OverallStatus.NEEDS_REVIEW,
+            summary=summary,
+            positive_observations=[],
+            requires_human_review=True,
+            ai_status=ai_stat,
+            model_name=settings.gemini_model if ai_stat == AIStatus.OK else None,
+            rule_engine_version=RULE_ENGINE_VERSION,
+            knowledge_snapshot=knowledge.model_dump(mode="json"),
+            duration_ms=duration_ms,
+            findings=[finding],
+        )
 
     # Step 1: Deterministic rule engine
     rule_findings, rule_positives = run_rule_engine(content, knowledge)

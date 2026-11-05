@@ -41,6 +41,7 @@ RULES:
 8. Acknowledge positive brand alignment in 'positive_observations' (e.g. usage of preferred terms or reassuring tone).
 9. Do not flag harmless, realistic descriptions as violations.
 10. DO NOT use em dashes in explanations or suggestions. Use commas, semicolons, or hyphens instead.
+11. BRAND RELEVANCE: Always evaluate content within the domain and product scope of the active brand. If the submitted content describes an entirely different brand, product category, or industry, DO NOT generate brand-specific violations or skincare-related corrections for it. Instead, flag it as a potential issue with category 'other', explaining that it appears unrelated to the active brand.
 """
 
 
