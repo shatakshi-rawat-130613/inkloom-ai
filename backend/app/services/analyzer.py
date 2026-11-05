@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import get_settings
-from app.enums import AIStatus, FindingSource, OverallStatus
+from app.enums import AIStatus, FindingCategory, FindingSource, OverallStatus
 from app.schemas import BrandKnowledge, FindingDraft
 from app.services.gemini_service import run_gemini_analysis
 from app.services.rule_engine import run_rule_engine
@@ -100,7 +100,21 @@ def analyze_content(
     )
 
     # Step 5: Summary text
-    if ai_raw and ai_raw.summary:
+    has_insufficient_context = any(
+        f.category == FindingCategory.OTHER and (
+            "insufficient" in f.explanation.lower() or "lacks sufficient" in f.explanation.lower()
+        )
+        for f in all_findings
+    )
+    if has_insufficient_context:
+        summary = "Content requires human review: insufficient brand or product context for a reliable compliance assessment."
+        if ai_status == AIStatus.UNAVAILABLE and ai_error:
+            summary += f" [AI Engine unavailable: {ai_error}]"
+    elif ai_raw and ai_raw.summary and (
+        (overall_status == OverallStatus.COMPLIANT and len(all_findings) == 0)
+        or (overall_status == OverallStatus.NON_COMPLIANT and len(all_findings) > 0)
+        or (overall_status == OverallStatus.NEEDS_REVIEW and len(all_findings) > 0 and "compliant" not in ai_raw.summary.lower())
+    ):
         summary = ai_raw.summary
     else:
         # Fallback summary based on findings

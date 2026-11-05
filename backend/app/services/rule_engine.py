@@ -16,13 +16,21 @@ from app.schemas import BrandKnowledge, FindingDraft, Guideline, Term
 from app.validation import build_evidence, locate, sanitize_text
 
 # Regex patterns for deterministic checks
+NUMBER_WORDS = r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty-four|forty-eight)"
 TIMEFRAME_PATTERN = re.compile(
-    r"\b(?:in\s+just\s+\d+\s*(?:days?|hours?|weeks?)|within\s+\d+\s*(?:days?|hours?|weeks?)|in\s+\d+\s*(?:days?|hours?))\b",
+    r"\b(?:in\s+(?:just\s+)?|within\s+(?:just\s+)?|after\s+)"
+    + NUMBER_WORDS
+    + r"\s*(?:days?|hours?|weeks?)\b",
     re.IGNORECASE,
 )
 
 GUARANTEE_PATTERN = re.compile(
     r"\b(?:guarantees?|guaranteed|100%\s+guarantee|instant(?:ly)?\s+cure)\b",
+    re.IGNORECASE,
+)
+
+UNAPPROVED_ACNE_CLAIM_PATTERN = re.compile(
+    r"\b(?:reduces?|eliminates?|cures?|removes?)\s+acne\b",
     re.IGNORECASE,
 )
 
@@ -54,6 +62,27 @@ def _build_term_regex(term_text: str) -> re.Pattern[str]:
 
 def _find_guideline_by_code(guidelines: Sequence[Guideline], code: str) -> Guideline | None:
     return next((g for g in guidelines if g.id == code), None)
+
+
+def _has_brand_substance(content: str, knowledge: BrandKnowledge) -> bool:
+    """Checks whether the text contains substantive references to the brand,
+    its products, approved terminology, or domain concepts."""
+    text = content.lower()
+
+    if knowledge.brand_name.lower() in text:
+        return True
+
+    for t in knowledge.terms:
+        if t.preferred_term and t.preferred_term.lower() in text:
+            return True
+        if t.prohibited_term and t.prohibited_term.lower() in text:
+            return True
+
+    domain_keywords = [
+        "skin", "skincare", "cream", "lotion", "moisturizer",
+        "routine", "formula", "treatment", "acne", "complexion"
+    ]
+    return any(re.search(rf"\b{re.escape(kw)}\b", text) for kw in domain_keywords)
 
 
 def run_rule_engine(
@@ -198,8 +227,65 @@ def run_rule_engine(
                     )
                 )
 
+    # 4b. Unapproved acne claims (e.g. "reduces acne") against FACT-001/FACT-002
+    if "FACT-001" in knowledge.fact_codes():
+        for match in UNAPPROVED_ACNE_CLAIM_PATTERN.finditer(content):
+            matched_text = match.group(0)
+            start, end = match.start(), match.end()
+            if not any(f.start_offset is not None and abs(f.start_offset - start) < 10 for f in findings):
+                evidence_text = build_evidence(knowledge, "GUIDE-003", "FACT-001")
+                findings.append(
+                    FindingDraft(
+                        source=FindingSource.RULE_ENGINE,
+                        category=FindingCategory.OUTCOME_CLAIM,
+                        severity=Severity.MEDIUM,
+                        finding_type=FindingType.UNSUPPORTED_CLAIM,
+                        original_text=matched_text,
+                        start_offset=start,
+                        end_offset=end,
+                        guideline_id="GUIDE-003",
+                        approved_fact_id="FACT-001",
+                        evidence=evidence_text,
+                        explanation=sanitize_text(
+                            f"Claim '{matched_text}' is not an approved product statement. "
+                            "Approved messaging states the product is designed to support clearer-looking skin."
+                        ) or "",
+                        suggestion="Replace with approved messaging: 'designed to support clearer-looking skin'.",
+                        confidence=0.95,
+                    )
+                )
+
     # 5. Tone check positive observation
     if "gentle, reassuring approach" in content.lower() or "simple addition to your skincare routine" in content.lower():
         positive_observations.append("Reflects friendly, reassuring and realistic tone aligned with brand guidelines.")
+
+    # 6. Insufficient context check
+    # Distinguishes genuinely compliant content from content that lacks sufficient context for meaningful assessment.
+    # If no rule violations were detected, verify that the content has sufficient brand/product substance.
+    words = content.strip().split()
+    if len(findings) == 0:
+        is_too_short = len(words) < 3
+        is_generic_or_empty = len(words) < 10 and not _has_brand_substance(content, knowledge)
+        if is_too_short or is_generic_or_empty:
+            findings.append(
+                FindingDraft(
+                    source=FindingSource.RULE_ENGINE,
+                    category=FindingCategory.OTHER,
+                    severity=Severity.MEDIUM,
+                    finding_type=FindingType.POTENTIAL_ISSUE,
+                    original_text=content.strip(),
+                    start_offset=0,
+                    end_offset=len(content),
+                    guideline_id=None,
+                    approved_fact_id=None,
+                    evidence="Brand governance requires sufficient communication context to evaluate compliance against approved brand standards.",
+                    explanation=(
+                        f"Submitted content ('{content.strip()}') provides insufficient brand or product context for a reliable "
+                        "governance assessment. Short, greeting, or generic copy requires human review before approval."
+                    ),
+                    suggestion="Provide substantive communication copy including relevant brand messaging or product context.",
+                    confidence=0.95,
+                )
+            )
 
     return findings, positive_observations

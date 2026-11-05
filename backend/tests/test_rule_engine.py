@@ -72,3 +72,87 @@ def test_test3_partially_compliant_rule_engine(seeded_db):
     result = analyze_content(PARTIALLY_COMPLIANT.content, knowledge)
     assert result.overall_status == OverallStatus.NEEDS_REVIEW
     assert result.requires_human_review is True
+
+
+def test_arbitrary_case_a_insufficient_context_single_word(seeded_db):
+    """Case A: 'hellloooooooo' -> Needs review or insufficient context, not automatically compliant."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    findings, _ = run_rule_engine("hellloooooooo", knowledge)
+    assert len(findings) == 1
+    assert findings[0].category == FindingCategory.OTHER
+    assert findings[0].finding_type == FindingType.POTENTIAL_ISSUE
+    assert "insufficient" in findings[0].explanation.lower()
+
+    result = analyze_content("hellloooooooo", knowledge)
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.requires_human_review is True
+    assert "insufficient" in result.summary.lower()
+
+
+def test_arbitrary_case_b_guarantee_48_hours(seeded_db):
+    """Case B: 'LumaCare guarantees acne removal in 48 hours.' -> Non-compliant."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    text = "LumaCare guarantees acne removal in 48 hours."
+    findings, _ = run_rule_engine(text, knowledge)
+
+    # Must flag prohibited term or guarantee
+    assert any(f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION for f in findings)
+    # Must flag timeframe
+    assert any(f.category == FindingCategory.TIMEFRAME and "48 hours" in f.original_text for f in findings)
+
+    result = analyze_content(text, knowledge)
+    assert result.overall_status == OverallStatus.NON_COMPLIANT
+    assert result.requires_human_review is True
+
+
+def test_arbitrary_case_c_compliant_substantive(seeded_db):
+    """Case C: 'LumaCare supports clearer-looking skin.' -> Compliant."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    text = "LumaCare supports clearer-looking skin."
+    findings, positives = run_rule_engine(text, knowledge)
+
+    # Must have no violations
+    assert len(findings) == 0
+    # Must have positive observation for preferred terminology
+    assert any("supports clearer-looking skin" in p for p in positives)
+
+
+def test_arbitrary_case_d_reduces_acne_seven_days(seeded_db):
+    """Case D: 'Our cream reduces acne within seven days.' -> Needs review."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    text = "Our cream reduces acne within seven days."
+    findings, _ = run_rule_engine(text, knowledge)
+
+    # Must flag timeframe with spelled-out number 'seven days'
+    assert any(f.category == FindingCategory.TIMEFRAME and "seven days" in f.original_text.lower() for f in findings)
+    # Must flag unapproved acne claim
+    assert any("acne" in f.original_text.lower() for f in findings)
+
+    result = analyze_content(text, knowledge)
+    assert result.overall_status in (OverallStatus.NEEDS_REVIEW, OverallStatus.NON_COMPLIANT)
+    assert result.requires_human_review is True
+
+
+def test_arbitrary_case_e_generic_greeting_insufficient_context(seeded_db):
+    """Case E: 'Have a beautiful day!' -> Insufficient context or needs review."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    findings, _ = run_rule_engine("Have a beautiful day!", knowledge)
+    assert len(findings) == 1
+    assert findings[0].category == FindingCategory.OTHER
+    assert findings[0].finding_type == FindingType.POTENTIAL_ISSUE
+    assert "insufficient" in findings[0].explanation.lower()
+
+    result = analyze_content("Have a beautiful day!", knowledge)
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.requires_human_review is True
+    assert "insufficient" in result.summary.lower()
