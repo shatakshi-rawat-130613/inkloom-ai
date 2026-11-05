@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+/*
+ * Inkloom AI design tokens.
+ * Default Tailwind palette, shadows and large radii are removed on purpose
+ * (see design restrictions: no pure white, no default drop shadows,
+ * no pill-shaped everything, no neon or rainbow palettes).
+ */
+@theme {
+  --color-*: initial;
+  --color-ivory: #f4efe5;
+  --color-parchment: #e4d8c6;
+  --color-parchment-deep: #d6c7b0;
+  --color-ink: #302b26;
+  --color-ink-soft: #5b534b;
+  --color-sage: #53675c;
+  --color-sage-soft: #dfe4dc;
+  --color-terracotta: #a65f48;
+  --color-terracotta-soft: #f0ddd3;
+  --color-ochre: #9a7a3a;
+  --color-ochre-soft: #efe4cc;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-*: initial;
+  --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Source Sans 3', 'Helvetica Neue', Arial, sans-serif;
+
+  --shadow-*: initial;
+
+  --radius-*: initial;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-ivory);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-sage);
+    outline-offset: 2px;
+  }
+}
