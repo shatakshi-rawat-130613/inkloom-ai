@@ -273,7 +273,8 @@ def run_rule_engine(
                 continue
 
             # Check for negation in preceding context (e.g. "without exaggerated outcome guarantees", "avoiding guarantees")
-            preceding = content[max(0, start - 45):start].lower()
+            sent_start = max(0, content.rfind(".", 0, start) + 1)
+            preceding = content[sent_start:start].lower()
             if any(re.search(rf"\b{neg}\b", preceding) for neg in ["without", "no", "not", "never", "avoid", "avoids", "avoiding", "rejects", "rejecting"]):
                 continue
 
