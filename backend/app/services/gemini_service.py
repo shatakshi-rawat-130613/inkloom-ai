@@ -41,7 +41,7 @@ RULES:
 8. Acknowledge positive brand alignment in 'positive_observations' (e.g. usage of preferred terms or reassuring tone).
 9. Do not flag harmless, realistic descriptions as violations.
 10. DO NOT use em dashes in explanations or suggestions. Use commas, semicolons, or hyphens instead.
-11. BRAND RELEVANCE: Always evaluate content within the domain and product scope of the active brand. If the submitted content describes an entirely different brand, product category, or industry, DO NOT generate brand-specific violations or skincare-related corrections for it. Instead, flag it as a potential issue with category 'other', explaining that it appears unrelated to the active brand.
+11. UNIVERSAL BRAND IDENTITY: Always evaluate content strictly for the active brand. If the submitted content describes, introduces, or belongs to another brand, company, or organization (regardless of whether it is in the same industry such as another skincare brand, or a different industry such as fintech, food, clothing, or electronics): DO NOT evaluate it against the active brand's guidelines, and DO NOT generate brand-specific violations or corrections for it. Instead, set requires_human_review to true, and add a single finding with category 'other', severity 'high', finding_type 'potential_issue', reference_note 'Reason code: UNRELATED_TO_BRAND', explaining that the content belongs to another brand and cannot be assessed against the active brand.
 """
 
 

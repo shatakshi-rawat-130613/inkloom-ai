@@ -115,8 +115,8 @@ def run_rule_engine(
         tuple of (findings, positive_observations)
     """
     relevance = assess_brand_relevance(content, knowledge)
-    if relevance.status == BrandRelevance.UNRELATED:
-        return [make_unrelated_finding(content, knowledge)], []
+    if relevance.status == BrandRelevance.UNRELATED_TO_BRAND:
+        return [make_unrelated_finding(content, knowledge, detected_brand=relevance.detected_brand)], []
     if relevance.status == BrandRelevance.INSUFFICIENT_CONTEXT:
         return [make_insufficient_context_finding(content, knowledge)], []
 

@@ -44,6 +44,7 @@ from app.services.submission_service import (
     record_review,
     request_review,
 )
+from tests.fixtures.finora import FINORA_TEXT
 from tests.fixtures.harvest_and_hearth import HARVEST_AND_HEARTH_TEXT
 from tests.fixtures.lumacare_cases import COMPLIANT, NON_COMPLIANT, PARTIALLY_COMPLIANT
 
@@ -277,3 +278,127 @@ def test_scenario_8_skincare_copy_unsupported_claim_not_unrelated(seeded_db):
     # flags unapproved acne claim and timeframe
     assert any(f.category == FindingCategory.TIMEFRAME for f in result.findings)
     assert result.overall_status in (OverallStatus.NEEDS_REVIEW, OverallStatus.NON_COMPLIANT)
+
+
+def test_scenario_finora_fintech_brand_unrelated(seeded_db):
+    """Scenario: Finora financial technology brand -> UNRELATED_TO_BRAND + NEEDS_REVIEW."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    relevance = assess_brand_relevance(
+        FINORA_TEXT,
+        knowledge,
+        title="Finora: Brand Overview and Business Identity",
+        content_type="product_description",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+    assert relevance.detected_brand == "Finora"
+    assert "Finora" in relevance.explanation
+
+    result = analyze_content(
+        FINORA_TEXT,
+        knowledge,
+        title="Finora: Brand Overview and Business Identity",
+        content_type="product_description",
+    )
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+    assert "Finora" in result.summary
+    assert len(result.findings) == 1
+    assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+    # Must NOT produce any LumaCare violations or skincare suggestions
+    assert not any(f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION for f in result.findings)
+    assert "clearer-looking skin" not in (result.findings[0].suggestion or "").lower()
+
+
+def test_scenario_another_skincare_brand_unrelated(seeded_db):
+    """Scenario: Another fictional skincare brand (different brand, same industry) -> UNRELATED_TO_BRAND + NEEDS_REVIEW."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    velveteen_text = (
+        "# Velveteen Skincare: Brand Overview\n\n"
+        "Velveteen is a luxury skincare label focused on anti-aging peptide creams and botanical face oils. "
+        "The company was founded in London with the mission to restore skin vitality through clinical formulations. "
+        "Velveteen provides daily creams and serums for sensitive skin."
+    )
+
+    relevance = assess_brand_relevance(
+        velveteen_text,
+        knowledge,
+        title="Velveteen Brand Overview",
+        content_type="product_description",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+    assert "Velveteen" in (relevance.detected_brand or "")
+
+    result = analyze_content(
+        velveteen_text,
+        knowledge,
+        title="Velveteen Brand Overview",
+        content_type="product_description",
+    )
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+    assert "Velveteen" in result.summary
+    assert len(result.findings) == 1
+    assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+    # Even though it mentions creams and skincare, it must NOT produce LumaCare violations
+    assert not any(f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION for f in result.findings)
+
+
+def test_scenario_clothing_brand_unrelated(seeded_db):
+    """Scenario: Fictional clothing brand -> UNRELATED_TO_BRAND + NEEDS_REVIEW."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    clothing_text = (
+        "Kestrel Apparel is an outdoor clothing company designing weather-resistant jackets, "
+        "merino wool knitwear, and mountain trousers for hiking enthusiasts. Our mission is to combine "
+        "durable outerwear with sustainable textile manufacturing."
+    )
+
+    relevance = assess_brand_relevance(
+        clothing_text,
+        knowledge,
+        title="Kestrel Apparel Collection",
+        content_type="advertisement",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+
+    result = analyze_content(clothing_text, knowledge, title="Kestrel Apparel Collection")
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+    assert len(result.findings) == 1
+    assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+
+
+def test_scenario_electronics_brand_unrelated(seeded_db):
+    """Scenario: Fictional electronics brand -> UNRELATED_TO_BRAND + NEEDS_REVIEW."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    electronics_text = (
+        "Zenith Electronics is a consumer technology company designing premium wireless headphones, "
+        "active noise cancellation earbuds, and high-fidelity Bluetooth home audio speakers. "
+        "Zenith aims to make studio-quality audio accessible to music lovers."
+    )
+
+    relevance = assess_brand_relevance(
+        electronics_text,
+        knowledge,
+        title="Zenith Audio Overview",
+        content_type="product_description",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+
+    result = analyze_content(electronics_text, knowledge, title="Zenith Audio Overview")
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+    assert len(result.findings) == 1
+    assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+

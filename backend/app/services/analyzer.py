@@ -83,15 +83,22 @@ def analyze_content(
     # Step 0: Assess Brand Relevance
     relevance = assess_brand_relevance(content, knowledge, title=title, content_type=content_type)
 
-    if relevance.status == BrandRelevance.UNRELATED:
-        finding = make_unrelated_finding(content, knowledge)
+    if relevance.status == BrandRelevance.UNRELATED_TO_BRAND:
+        finding = make_unrelated_finding(content, knowledge, detected_brand=relevance.detected_brand)
         duration_ms = int((time.perf_counter() - start_time) * 1000)
-        summary = (
-            f"UNRELATED TO ACTIVE BRAND: The submitted content appears to describe a brand, product category "
-            f"or industry that is unrelated to {knowledge.brand_name}, the currently active skincare brand. "
-            f"Its compliance cannot be reliably assessed against {knowledge.brand_name}'s approved guidelines "
-            f"and product information."
-        )
+        if relevance.detected_brand:
+            summary = (
+                f"UNRELATED TO ACTIVE BRAND: The submitted content appears to belong to a different brand "
+                f"('{relevance.detected_brand}') and cannot be evaluated against {knowledge.brand_name}'s "
+                f"approved guidelines and product information."
+            )
+        else:
+            summary = (
+                f"UNRELATED TO ACTIVE BRAND: The submitted content appears to describe a brand, product category "
+                f"or industry that is unrelated to {knowledge.brand_name}, the currently active skincare brand. "
+                f"Its compliance cannot be reliably assessed against {knowledge.brand_name}'s approved guidelines "
+                f"and product information."
+            )
         ai_stat = AIStatus.OK if settings.gemini_api_key else AIStatus.DISABLED
         return CompleteAnalysisResult(
             overall_status=OverallStatus.NEEDS_REVIEW,
