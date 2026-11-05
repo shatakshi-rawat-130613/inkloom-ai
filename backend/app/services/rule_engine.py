@@ -271,6 +271,12 @@ def run_rule_engine(
             start, end = match.start(), match.end()
             if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
                 continue
+
+            # Check for negation in preceding context (e.g. "without exaggerated outcome guarantees", "avoiding guarantees")
+            preceding = content[max(0, start - 45):start].lower()
+            if any(re.search(rf"\b{neg}\b", preceding) for neg in ["without", "no", "not", "never", "avoid", "avoids", "avoiding", "rejects", "rejecting"]):
+                continue
+
             # Expand to surrounding phrase if possible
             phrase_start = max(0, start - 15)
             phrase_end = min(len(content), end + 25)
