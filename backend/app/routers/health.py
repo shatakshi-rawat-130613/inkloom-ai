@@ -41,6 +41,7 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
 @router.get("/api/debug/ai")
 def debug_ai(
     model: str | None = Query(default=None, description="Optional model to test"),
+    test_case: int = Query(default=2, ge=1, le=3, description="LumaCare test case: 1=non-compliant, 2=compliant, 3=partially-compliant"),
     skip_test: bool = Query(default=False, description="Skip generation test"),
 ) -> dict[str, Any]:
     """Diagnostic probe to verify Gemini API model availability and structured JSON output."""
@@ -69,13 +70,24 @@ def debug_ai(
 
     test_result: dict[str, Any] = {
         "model_tested": target_clean,
+        "test_case_number": test_case,
         "success": False,
         "exception_type": None,
         "exception_message": None,
         "output_summary": None,
+        "findings_count": 0,
+        "findings": [],
+        "positive_observations": [],
     }
 
     if not skip_test:
+        test_inputs = {
+            1: "Our revolutionary cream guarantees 100% acne removal in just 2 days! Buy now and get flawless skin instantly.",
+            2: "Discover a simple addition to your skincare routine with LumaCare. Our cream is designed to support clearer-looking skin. Enjoy a gentle, reassuring approach to everyday skincare.",
+            3: "Make your skincare routine simpler with LumaCare. Our cream supports clearer-looking skin and helps reduce acne within 7 days. Experience a gentle approach to everyday skincare.",
+        }
+        chosen_content = test_inputs[test_case]
+
         try:
             client = genai.Client(
                 api_key=settings.gemini_api_key,
@@ -88,7 +100,7 @@ def debug_ai(
                 temperature=0.0,
             )
 
-            test_prompt = """BRAND: LumaCare
+            test_prompt = f"""BRAND: LumaCare
 APPROVED GUIDELINES:
 - [GUIDE-001] No guaranteed outcomes (outcome_claim, severity: high): Do not promise guaranteed medical or skincare outcomes.
 - [GUIDE-002] Friendly and realistic tone (tone, severity: medium): Use friendly, reassuring and realistic messaging.
@@ -102,7 +114,7 @@ APPROVED / PROHIBITED TERMINOLOGY:
 - [TERM-001] Preferred: 'supports clearer-looking skin' | Prohibited: 'guaranteed acne removal'
 
 SUBMITTED CONTENT TO ANALYSE:
-"Our cream is designed to support clearer-looking skin. Enjoy a gentle, reassuring approach to everyday skincare."
+"{chosen_content}"
 """
 
             response = client.models.generate_content(
@@ -116,6 +128,7 @@ SUBMITTED CONTENT TO ANALYSE:
                 test_result["success"] = True
                 test_result["output_summary"] = parsed.summary
                 test_result["findings_count"] = len(parsed.findings)
+                test_result["findings"] = [f.model_dump() for f in parsed.findings]
                 test_result["positive_observations"] = parsed.positive_observations
             else:
                 test_result["exception_message"] = "Empty text in response"
