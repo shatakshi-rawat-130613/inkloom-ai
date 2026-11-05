@@ -92,7 +92,7 @@ Analyse the submitted content against the approved brand knowledge. Return a str
     try:
         client = genai.Client(
             api_key=settings.gemini_api_key,
-            http_options=types.HttpOptions(timeout=settings.gemini_timeout_seconds),
+            http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)),
         )
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,

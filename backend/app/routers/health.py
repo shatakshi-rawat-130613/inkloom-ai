@@ -79,7 +79,7 @@ def debug_ai(
         try:
             client = genai.Client(
                 api_key=settings.gemini_api_key,
-                http_options=types.HttpOptions(timeout=20),
+                http_options=types.HttpOptions(timeout=30000),
             )
             config = types.GenerateContentConfig(
                 system_instruction="You are Inkloom AI. Evaluate content against brand standards.",
