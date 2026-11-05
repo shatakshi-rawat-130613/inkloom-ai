@@ -20,9 +20,9 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.8-flash
       - key: CORS_ORIGINS
-        value: "http://localhost:5173,https://*.vercel.app"
+        value: "http://localhost:5173,https://inkloom-ai-wheat.vercel.app"
       - key: MAX_CONTENT_CHARS
         value: "10000"
       - key: ANALYZE_RATE_LIMIT_PER_MINUTE

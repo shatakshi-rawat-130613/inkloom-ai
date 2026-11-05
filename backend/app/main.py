@@ -46,11 +46,12 @@ app = FastAPI(
 # CORS configuration
 origins = settings.cors_origin_list
 if not origins:
-    origins = ["*"]
+    origins = ["http://localhost:5173", "https://inkloom-ai-wheat.vercel.app"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

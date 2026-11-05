@@ -8,6 +8,7 @@ Safe execution:
 """
 
 import logging
+import re
 from typing import Any
 
 from google import genai
@@ -19,6 +20,11 @@ from app.schemas import AIAnalysisOutput, BrandKnowledge
 from app.validation import VerificationResult, verify_ai_findings
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_error(err: Exception | str) -> str:
+    text = str(err)
+    return re.sub(r"AIza[0-9A-Za-z-_]{35}", "[REDACTED_API_KEY]", text)
 
 SYSTEM_PROMPT = """You are Inkloom AI, an intelligent brand-governance engine.
 Your mission is to evaluate marketing and communication content strictly against the provided brand knowledge.
@@ -61,16 +67,16 @@ def _format_brand_knowledge(knowledge: BrandKnowledge) -> str:
 def run_gemini_analysis(
     content: str,
     knowledge: BrandKnowledge,
-) -> tuple[AIAnalysisOutput | None, VerificationResult | None, AIStatus]:
+) -> tuple[AIAnalysisOutput | None, VerificationResult | None, AIStatus, str | None]:
     """Runs Gemini structured analysis on content.
 
     Returns:
-        tuple of (raw_output, verification_result, ai_status)
+        tuple of (raw_output, verification_result, ai_status, error_detail)
     """
     settings = get_settings()
 
     if not settings.gemini_api_key:
-        return None, None, AIStatus.DISABLED
+        return None, None, AIStatus.DISABLED, "API key not configured."
 
     brand_context = _format_brand_knowledge(knowledge)
     prompt = f"""{brand_context}
@@ -100,13 +106,14 @@ Analyse the submitted content against the approved brand knowledge. Return a str
 
         if not response.text:
             logger.warning("Empty response from Gemini API")
-            return None, None, AIStatus.INVALID_RESPONSE
+            return None, None, AIStatus.INVALID_RESPONSE, "Empty response from model."
 
         parsed_output = AIAnalysisOutput.model_validate_json(response.text)
         verification = verify_ai_findings(parsed_output, knowledge, content)
 
-        return parsed_output, verification, AIStatus.OK
+        return parsed_output, verification, AIStatus.OK, None
 
     except Exception as exc:
-        logger.warning("Gemini analysis failed or timed out: %s", exc)
-        return None, None, AIStatus.UNAVAILABLE
+        clean_err = sanitize_error(exc)
+        logger.warning("Gemini analysis failed or timed out: %s (%s)", type(exc).__name__, clean_err)
+        return None, None, AIStatus.UNAVAILABLE, f"{type(exc).__name__}: {clean_err}"

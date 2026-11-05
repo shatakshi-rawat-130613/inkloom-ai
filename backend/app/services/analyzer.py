@@ -76,7 +76,7 @@ def analyze_content(
     rule_findings, rule_positives = run_rule_engine(content, knowledge)
 
     # Step 2: Gemini LLM analysis
-    ai_raw, ai_verification, ai_status = run_gemini_analysis(content, knowledge)
+    ai_raw, ai_verification, ai_status, ai_error = run_gemini_analysis(content, knowledge)
 
     ai_findings = ai_verification.findings if ai_verification else []
     ai_positives = ai_raw.positive_observations if ai_raw else []
@@ -111,6 +111,9 @@ def analyze_content(
             summary = f"Content contains {count} brand compliance issue(s), including confirmed rule violations."
         else:
             summary = f"Content requires review: {count} potential issue(s) or unsupported claim(s) detected."
+
+        if ai_status == AIStatus.UNAVAILABLE and ai_error:
+            summary += f" [AI Engine unavailable: {ai_error}]"
 
     duration_ms = int((time.perf_counter() - start_time) * 1000)
 

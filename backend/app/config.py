@@ -15,10 +15,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./inkloom_dev.db"
 
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     gemini_timeout_seconds: float = 30.0
 
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,https://inkloom-ai-wheat.vercel.app"
 
     max_content_chars: int = 10_000
     analyze_rate_limit_per_minute: int = 10
