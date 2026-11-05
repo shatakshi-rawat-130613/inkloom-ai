@@ -9,6 +9,7 @@ Safe execution:
 
 import logging
 import re
+import time
 from typing import Any
 
 from google import genai
@@ -101,20 +102,43 @@ Analyse the submitted content against the approved brand knowledge. Return a str
             temperature=0.0,
         )
 
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config=config,
-        )
+        # Try primary model first, with 1 retry on transient 503; then fall back to high-availability flash-lite
+        candidate_models = [settings.gemini_model]
+        if settings.gemini_model != "gemini-3.1-flash-lite":
+            candidate_models.append("gemini-3.1-flash-lite")
 
-        if not response.text:
-            logger.warning("Empty response from Gemini API")
-            return None, None, AIStatus.INVALID_RESPONSE, "Empty response from model."
+        last_exc: Exception | None = None
+        for model_id in candidate_models:
+            for attempt in range(2):
+                try:
+                    response = client.models.generate_content(
+                        model=model_id,
+                        contents=prompt,
+                        config=config,
+                    )
 
-        parsed_output = AIAnalysisOutput.model_validate_json(response.text)
-        verification = verify_ai_findings(parsed_output, knowledge, content)
+                    if not response.text:
+                        logger.warning("Empty response from Gemini API (%s)", model_id)
+                        return None, None, AIStatus.INVALID_RESPONSE, "Empty response from model."
 
-        return parsed_output, verification, AIStatus.OK, None
+                    parsed_output = AIAnalysisOutput.model_validate_json(response.text)
+                    verification = verify_ai_findings(parsed_output, knowledge, content)
+
+                    return parsed_output, verification, AIStatus.OK, None
+
+                except Exception as exc:
+                    last_exc = exc
+                    err_msg = str(exc)
+                    # Transient capacity spike on Google side: brief delay and retry once
+                    if ("503" in err_msg or "UNAVAILABLE" in err_msg) and attempt == 0:
+                        logger.info("Transient 503 on %s, retrying after 1.5s...", model_id)
+                        time.sleep(1.5)
+                        continue
+                    break
+
+        if last_exc:
+            raise last_exc
+        return None, None, AIStatus.UNAVAILABLE, "No model succeeded."
 
     except Exception as exc:
         clean_err = sanitize_error(exc)
