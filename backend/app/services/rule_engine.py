@@ -66,7 +66,8 @@ def _find_guideline_by_code(guidelines: Sequence[Guideline], code: str) -> Guide
 
 def _has_brand_substance(content: str, knowledge: BrandKnowledge) -> bool:
     """Checks whether the text contains substantive references to the brand,
-    its products, approved terminology, or domain concepts."""
+    its products, approved terminology, or domain concepts derived dynamically
+    from the brand's knowledge base."""
     text = content.lower()
 
     if knowledge.brand_name.lower() in text:
@@ -78,11 +79,24 @@ def _has_brand_substance(content: str, knowledge: BrandKnowledge) -> bool:
         if t.prohibited_term and t.prohibited_term.lower() in text:
             return True
 
-    domain_keywords = [
-        "skin", "skincare", "cream", "lotion", "moisturizer",
-        "routine", "formula", "treatment", "acne", "complexion"
-    ]
-    return any(re.search(rf"\b{re.escape(kw)}\b", text) for kw in domain_keywords)
+    # Dynamically extract substantive vocabulary from the brand's guidelines and facts
+    stop_words = {
+        "this", "that", "with", "from", "your", "have", "been", "must", "will", "more",
+        "some", "such", "than", "then", "into", "only", "also", "when", "what", "which",
+        "about", "after", "other", "their", "there", "these", "those", "would", "could",
+        "should", "brand", "approved", "statement", "information", "guideline", "guidelines"
+    }
+    substantive_tokens: set[str] = set()
+    for f in knowledge.facts:
+        for word in re.findall(r"\b[a-zA-Z]{4,}\b", f.statement.lower()):
+            if word not in stop_words:
+                substantive_tokens.add(word)
+    for g in knowledge.guidelines:
+        for word in re.findall(r"\b[a-zA-Z]{4,}\b", g.text.lower()):
+            if word not in stop_words:
+                substantive_tokens.add(word)
+
+    return any(re.search(rf"\b{re.escape(token)}\b", text) for token in substantive_tokens)
 
 
 def run_rule_engine(
@@ -247,7 +261,7 @@ def run_rule_engine(
                         approved_fact_id="FACT-001",
                         evidence=evidence_text,
                         explanation=sanitize_text(
-                            f"Claim '{matched_text}' is not an approved product statement. "
+                            f"Claim '{matched_text}' lacks approved supporting evidence in brand facts. "
                             "Approved messaging states the product is designed to support clearer-looking skin."
                         ) or "",
                         suggestion="Replace with approved messaging: 'designed to support clearer-looking skin'.",
