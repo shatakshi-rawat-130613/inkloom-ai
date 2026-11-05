@@ -70,6 +70,30 @@ BODY_BRAND_PATTERNS = [
     ),
 ]
 
+BRAND_NAME_TOKEN = r"[A-Z][A-Za-z0-9]*(?:[&\'\-\.][A-Za-z0-9]+)*(?:[ \t]+[A-Z][A-Za-z0-9]*(?:[&\'\-\.][A-Za-z0-9]+)*){0,3}"
+
+COMPETITOR_BRAND_PATTERNS = [
+    re.compile(
+        rf"\b(?:compare|comparing|comparison between|between)\s+({BRAND_NAME_TOKEN})\s+and\s+({BRAND_NAME_TOKEN})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b({BRAND_NAME_TOKEN})\s+(?:versus|vs\.?)\s+({BRAND_NAME_TOKEN})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?:competitor|competing brand|competing label|competing company|alternative brand|competing skincare brand),?[ \t]+({BRAND_NAME_TOKEN})\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b({BRAND_NAME_TOKEN})(?:,?[ \t]+a[ \t]+competing[ \t]+(?:[a-z\-]+[ \t]+)?brand|[ \t]+is[ \t]+a[ \t]+competing[ \t]+(?:[a-z\-]+[ \t]+)?brand)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b({BRAND_NAME_TOKEN})[ \t]+(?:claims?|guarantees?|promises?)[ \t]+(?:results|that|its|an?|to)\b"
+    ),
+]
+
 GENERIC_IGNORE_WORDS = {
     "about", "the", "brand", "overview", "this", "our", "our team", "our company",
     "the company", "the brand", "the platform", "we", "guidelines", "tone of voice",
@@ -77,7 +101,10 @@ GENERIC_IGNORE_WORDS = {
     "brand guidelines", "brand overview", "business identity", "brand personality",
     "product portfolio", "approved", "statement", "skincare", "skincare routine", "all marketing",
     "experience a", "discover a", "make your", "enjoy a", "our cream", "individual product",
-    "promotional messages", "these phrases", "examples of", "preferred brand"
+    "promotional messages", "these phrases", "examples of", "preferred brand",
+    "market", "report", "market report", "brief", "analysis", "review", "summary",
+    "in response", "in contrast", "by contrast", "meanwhile", "furthermore",
+    "consumer", "consumers", "customer", "customers", "industry"
 }
 
 SKINCARE_KEYWORDS = {
@@ -127,6 +154,13 @@ UNRELATED_AUTOMOTIVE_KEYWORDS = {
     "sedan", "suv", "motorcycle", "drivetrain"
 }
 
+COMPARATIVE_MARKERS = {
+    "vs", "versus", "compared to", "in contrast", "in comparison", "alternative to",
+    "competing", "competitor", "competitors", "both brands", "market analysis",
+    "industry comparison", "unlike", "market share", "comparing the two",
+    "comparison", "in contrast to", "other brands", "competing brand", "competing brands"
+}
+
 
 def _is_valid_brand_candidate(candidate: str, active_lower: str) -> bool:
     if not candidate or "\n" in candidate or "\r" in candidate:
@@ -169,6 +203,13 @@ def detect_alternative_brand(
             if _is_valid_brand_candidate(candidate, active_lower):
                 return candidate
 
+    # 3. Check competitor comparison patterns
+    for pat in COMPETITOR_BRAND_PATTERNS:
+        for m in pat.finditer(combined):
+            for candidate in m.groups():
+                if candidate and _is_valid_brand_candidate(candidate.strip(), active_lower):
+                    return candidate.strip()
+
     return None
 
 
@@ -206,85 +247,168 @@ def assess_brand_relevance(
     """Evaluates whether submitted content relates to the active brand.
 
     Distinguishes:
-    - RELEVANT_TO_BRAND
-    - UNRELATED_TO_BRAND
-    - INSUFFICIENT_CONTEXT
+    - RELEVANT_TO_BRAND: Content reasonably belongs to or meaningfully discusses
+      the active brand (including competitor comparisons, market analysis, or product copy).
+    - UNRELATED_TO_BRAND: Content exclusively describes or belongs to another brand,
+      or primarily covers an unrelated industry with only incidental/zero active brand connection.
+    - INSUFFICIENT_CONTEXT: Content lacks sufficient information or substance to
+      establish brand relevance (short greetings, generic copy, ambiguous multi-brand mentions).
     """
     brand_name = knowledge.brand_name.strip()
     brand_re = re.compile(rf"\b{re.escape(brand_name)}\b", re.IGNORECASE)
 
-    combined_text = f"{title or ''} {content}".strip()
+    combined_text = f"{title or ''}\n{content}".strip()
     text_lower = combined_text.lower()
     content_words = content.strip().split()
     word_count = len(content_words)
 
-    # 1. Step 1: Detect whether content describes ANOTHER brand
-    # This catches different brand in the SAME industry (e.g. Velveteen / AuraGlow skincare)
-    # as well as different brand in a DIFFERENT industry (e.g. Finora, Harvest & Hearth, Kestrel, Zenith)
-    detected_other = detect_alternative_brand(content, brand_name, title=title)
-    if detected_other:
-        return RelevanceAssessment(
-            status=BrandRelevance.UNRELATED_TO_BRAND,
-            reason_code="UNRELATED_TO_BRAND",
-            explanation=(
-                f"The submitted content appears to belong to a different brand ('{detected_other}') and is "
-                f"unrelated to {brand_name}. Its compliance cannot be evaluated against {brand_name}'s "
-                f"approved guidelines and product information."
-            ),
-            recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
-            detected_brand=detected_other,
-        )
+    # Count active brand mentions in submitted content and title
+    brand_mentions = len(brand_re.findall(combined_text))
 
-    # 2. Step 2: Check for distinct unrelated commercial sectors when no brand was named
+    # Detect alternative brand candidate
+    detected_other = detect_alternative_brand(content, brand_name, title=title)
+
+    # Domain and commercial sector counters
     food_count = sum(1 for kw in UNRELATED_FOOD_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
     fin_count = sum(1 for kw in UNRELATED_FINTECH_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
     elec_count = sum(1 for kw in UNRELATED_ELECTRONICS_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
     app_count = sum(1 for kw in UNRELATED_APPAREL_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
     auto_count = sum(1 for kw in UNRELATED_AUTOMOTIVE_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
-
     max_unrelated = max(food_count, fin_count, elec_count, app_count, auto_count)
-    has_skincare_domain = any(re.search(rf"\b{re.escape(kw)}\b", text_lower) for kw in SKINCARE_KEYWORDS)
 
-    if max_unrelated >= 3 and not has_skincare_domain and not brand_re.search(combined_text):
-        return RelevanceAssessment(
-            status=BrandRelevance.UNRELATED_TO_BRAND,
-            reason_code="UNRELATED_TO_BRAND",
-            explanation=(
-                f"The submitted content appears to describe a product category or industry that is unrelated to "
-                f"{brand_name}, the currently active skincare brand. Its compliance cannot be reliably assessed against "
-                f"{brand_name}'s approved guidelines and product information."
-            ),
-            recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
-            detected_brand=None,
-        )
+    skincare_count = sum(1 for kw in SKINCARE_KEYWORDS if re.search(rf"\b{re.escape(kw)}\b", text_lower))
+    has_skincare_domain = skincare_count > 0
 
-    # 3. Step 3: Explicit brand mention or active context -> RELEVANT
-    if brand_re.search(content) or (title and brand_re.search(title)):
-        return RelevanceAssessment(
-            status=BrandRelevance.RELEVANT_TO_BRAND,
-            reason_code=None,
-            explanation=f"Explicitly references active brand '{brand_name}'.",
-            recommendation=None,
-        )
-
-    # 4. Step 4: Check for preferred terms or domain substance (skincare without mentioning brand name)
     has_preferred_term = any(
         t.preferred_term and t.preferred_term.lower() in text_lower
         for t in knowledge.terms
     )
-    if has_skincare_domain or has_preferred_term:
-        return RelevanceAssessment(
-            status=BrandRelevance.RELEVANT_TO_BRAND,
-            reason_code=None,
-            explanation="Relates to active brand domain (skincare).",
-            recommendation=None,
-        )
-
-    # 5. Step 5: Insufficient context checks (very short copy or generic pleasantry)
     brand_tokens = _extract_brand_tokens(knowledge)
-    has_brand_tokens = any(re.search(rf"\b{re.escape(tok)}\b", text_lower) for tok in brand_tokens)
+    token_matches = sum(1 for tok in brand_tokens if re.search(rf"\b{re.escape(tok)}\b", text_lower))
+    has_comparative_framing = any(re.search(rf"\b{re.escape(m)}\b", text_lower) for m in COMPARATIVE_MARKERS)
 
-    if word_count < 3:
+    # -------------------------------------------------------------
+    # CASE 1: ACTIVE BRAND IS NOT MENTIONED (brand_mentions == 0)
+    # -------------------------------------------------------------
+    if brand_mentions == 0:
+        # 1.1 An alternative brand is declared/introduced -> UNRELATED
+        if detected_other:
+            return RelevanceAssessment(
+                status=BrandRelevance.UNRELATED_TO_BRAND,
+                reason_code="UNRELATED_TO_BRAND",
+                explanation=(
+                    f"The submitted content appears to belong to a different brand ('{detected_other}') and is "
+                    f"unrelated to {brand_name}. Its compliance cannot be evaluated against {brand_name}'s "
+                    f"approved guidelines and product information."
+                ),
+                recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
+                detected_brand=detected_other,
+            )
+
+        # 1.2 Unrelated commercial sectors without skincare domain -> UNRELATED
+        if max_unrelated >= 3 and not has_skincare_domain:
+            return RelevanceAssessment(
+                status=BrandRelevance.UNRELATED_TO_BRAND,
+                reason_code="UNRELATED_TO_BRAND",
+                explanation=(
+                    f"The submitted content appears to describe a product category or industry that is unrelated to "
+                    f"{brand_name}, the currently active skincare brand. Its compliance cannot be reliably assessed against "
+                    f"{brand_name}'s approved guidelines and product information."
+                ),
+                recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
+                detected_brand=None,
+            )
+
+        # 1.3 Active brand domain or preferred terms present without explicit brand name -> RELEVANT
+        if has_skincare_domain or has_preferred_term:
+            return RelevanceAssessment(
+                status=BrandRelevance.RELEVANT_TO_BRAND,
+                reason_code=None,
+                explanation="Relates to active brand domain (skincare).",
+                recommendation=None,
+            )
+
+        # 1.4 Short or greeting copy -> INSUFFICIENT_CONTEXT
+        if word_count < 3:
+            return RelevanceAssessment(
+                status=BrandRelevance.INSUFFICIENT_CONTEXT,
+                reason_code="INSUFFICIENT_CONTEXT",
+                explanation=f"Submitted content ('{content.strip()}') provides insufficient brand or product context for a reliable governance assessment.",
+                recommendation="Provide substantive communication copy including relevant brand messaging or product context.",
+            )
+
+        if word_count < 12 and token_matches == 0:
+            return RelevanceAssessment(
+                status=BrandRelevance.INSUFFICIENT_CONTEXT,
+                reason_code="INSUFFICIENT_CONTEXT",
+                explanation=f"Submitted content ('{content.strip()}') provides insufficient brand or product context for a reliable governance assessment.",
+                recommendation="Provide substantive communication copy including relevant brand messaging or product context.",
+            )
+
+        # Fallback without brand presence -> INSUFFICIENT_CONTEXT
+        return RelevanceAssessment(
+            status=BrandRelevance.INSUFFICIENT_CONTEXT,
+            reason_code="INSUFFICIENT_CONTEXT",
+            explanation=f"Content requires human review: insufficient brand or product context for a reliable compliance assessment against {brand_name}.",
+            recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
+        )
+
+    # -------------------------------------------------------------
+    # CASE 2: ACTIVE BRAND IS MENTIONED (brand_mentions > 0)
+    # -------------------------------------------------------------
+    # 2.1 Incidental mention in an unrelated commercial article:
+    # If the text is overwhelmingly about an unrelated industry (e.g. automotive, fintech, food)
+    # with no skincare substance and active brand is mentioned only once in passing.
+    if max_unrelated >= 3 and not has_skincare_domain and not has_preferred_term and brand_mentions <= 1:
+        return RelevanceAssessment(
+            status=BrandRelevance.UNRELATED_TO_BRAND,
+            reason_code="UNRELATED_TO_BRAND",
+            explanation=(
+                f"The submitted content primarily describes an unrelated product category or industry "
+                f"('{detected_other or 'unrelated industry'}'). While {brand_name} is mentioned in passing, "
+                f"the content lacks substantive connection to {brand_name}'s products, formulations, or brand guidelines."
+            ),
+            recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
+            detected_brand=detected_other,
+        )
+
+    # 2.2 If an alternative brand is also detected (Competitor comparison / multi-brand context):
+    if detected_other:
+        # Check if active brand has meaningful substance or contextual connection
+        has_meaningful_connection = (
+            has_skincare_domain
+            or has_preferred_term
+            or has_comparative_framing
+            or brand_mentions >= 2
+            or token_matches >= 2
+        )
+        if has_meaningful_connection:
+            return RelevanceAssessment(
+                status=BrandRelevance.RELEVANT_TO_BRAND,
+                reason_code=None,
+                explanation=(
+                    f"The submitted content discusses active brand '{brand_name}' in comparison with or relation to "
+                    f"another entity ('{detected_other}'). Active brand context is established."
+                ),
+                recommendation=None,
+                detected_brand=detected_other,
+            )
+
+        # If both are mentioned but text is very short or ambiguous without substance
+        if word_count < 12:
+            return RelevanceAssessment(
+                status=BrandRelevance.INSUFFICIENT_CONTEXT,
+                reason_code="INSUFFICIENT_CONTEXT",
+                explanation=(
+                    f"Submitted content mentions both {brand_name} and '{detected_other}', but provides insufficient "
+                    "context to establish clear brand governance relevance."
+                ),
+                recommendation="Provide substantive communication copy including relevant brand messaging or product context.",
+                detected_brand=detected_other,
+            )
+
+    # 2.3 Single word or very short copy with brand name but no other context
+    if word_count < 3 and not (has_skincare_domain or has_preferred_term):
         return RelevanceAssessment(
             status=BrandRelevance.INSUFFICIENT_CONTEXT,
             reason_code="INSUFFICIENT_CONTEXT",
@@ -292,20 +416,13 @@ def assess_brand_relevance(
             recommendation="Provide substantive communication copy including relevant brand messaging or product context.",
         )
 
-    if word_count < 12 and not has_brand_tokens:
-        return RelevanceAssessment(
-            status=BrandRelevance.INSUFFICIENT_CONTEXT,
-            reason_code="INSUFFICIENT_CONTEXT",
-            explanation=f"Submitted content ('{content.strip()}') provides insufficient brand or product context for a reliable governance assessment.",
-            recommendation="Provide substantive communication copy including relevant brand messaging or product context.",
-        )
-
-    # 6. Step 6: Fallback for substantive copy that lacks any brand identity or domain markers
+    # 2.4 Substantive active brand copy
     return RelevanceAssessment(
-        status=BrandRelevance.INSUFFICIENT_CONTEXT,
-        reason_code="INSUFFICIENT_CONTEXT",
-        explanation=f"Content requires human review: insufficient brand or product context for a reliable compliance assessment against {brand_name}.",
-        recommendation=f"Submit content relevant to {brand_name} or provide additional context to clarify its relationship with the active brand.",
+        status=BrandRelevance.RELEVANT_TO_BRAND,
+        reason_code=None,
+        explanation=f"Explicitly references active brand '{brand_name}'.",
+        recommendation=None,
+        detected_brand=detected_other,
     )
 
 

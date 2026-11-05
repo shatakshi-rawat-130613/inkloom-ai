@@ -16,6 +16,7 @@ from app.schemas import BrandKnowledge, FindingDraft, Guideline, Term
 from app.services.relevance import (
     BrandRelevance,
     assess_brand_relevance,
+    detect_alternative_brand,
     make_insufficient_context_finding,
     make_unrelated_finding,
 )
@@ -105,6 +106,67 @@ def _has_brand_substance(content: str, knowledge: BrandKnowledge) -> bool:
     return any(re.search(rf"\b{re.escape(token)}\b", text) for token in substantive_tokens)
 
 
+def _is_attributed_to_competitor(
+    start: int,
+    end: int,
+    content: str,
+    brand_name: str,
+    competitor_name: str | None,
+) -> bool:
+    """Checks whether a matched span is part of a sentence or clause exclusively describing a competitor."""
+    if not competitor_name:
+        return False
+
+    comp_re = re.compile(rf"\b{re.escape(competitor_name)}\b", re.IGNORECASE)
+    brand_re = re.compile(rf"\b{re.escape(brand_name)}\b", re.IGNORECASE)
+
+    sent_start = 0
+    for i in range(start - 1, -1, -1):
+        if content[i] in ".!?\n":
+            sent_start = i + 1
+            break
+    sent_end = len(content)
+    for i in range(end, len(content)):
+        if content[i] in ".!?\n":
+            sent_end = i
+            break
+    sentence = content[sent_start:sent_end].strip()
+
+    # If the sentence mentions competitor and does not mention active brand
+    if comp_re.search(sentence) and not brand_re.search(sentence):
+        return True
+
+    # Sentence mentions both: check immediate clause
+    c_start = sent_start
+    for i in range(start - 1, sent_start - 1, -1):
+        if content[i] in ",;—:\n":
+            c_start = i + 1
+            break
+    c_end = sent_end
+    for i in range(end, sent_end):
+        if content[i] in ",;—:\n":
+            c_end = i
+            break
+    clause = content[c_start:c_end].strip()
+    if comp_re.search(clause) and not brand_re.search(clause):
+        return True
+
+    # Check subject position in sentence
+    prefix = sentence[: max(0, start - sent_start)]
+    comp_matches = list(comp_re.finditer(prefix))
+    brand_matches = list(brand_re.finditer(prefix))
+    if comp_matches:
+        last_brand_pos = brand_matches[-1].start() if brand_matches else -1
+        if brand_matches:
+            before_brand = prefix[:last_brand_pos].rstrip()
+            if any(before_brand.lower().endswith(prep) for prep in ["to", "than", "over", "against"]):
+                return True
+        else:
+            return True
+
+    return False
+
+
 def run_rule_engine(
     content: str,
     knowledge: BrandKnowledge,
@@ -120,6 +182,8 @@ def run_rule_engine(
     if relevance.status == BrandRelevance.INSUFFICIENT_CONTEXT:
         return [make_insufficient_context_finding(content, knowledge)], []
 
+    competitor = detect_alternative_brand(content, knowledge.brand_name)
+
     findings: list[FindingDraft] = []
     positive_observations: list[str] = []
 
@@ -131,29 +195,30 @@ def run_rule_engine(
             match = regex.search(content)
             if match:
                 start, end = match.start(), match.end()
-                actual_quote = content[start:end]
-                related_guide = term.related_guideline_id or "GUIDE-001"
-                evidence_text = build_evidence(knowledge, related_guide, None)
-                findings.append(
-                    FindingDraft(
-                        source=FindingSource.RULE_ENGINE,
-                        category=FindingCategory.TERMINOLOGY,
-                        severity=Severity.HIGH,
-                        finding_type=FindingType.CONFIRMED_RULE_VIOLATION,
-                        original_text=actual_quote,
-                        start_offset=start,
-                        end_offset=end,
-                        guideline_id=related_guide,
-                        approved_term_id=term.id,
-                        evidence=evidence_text,
-                        explanation=sanitize_text(
-                            f"Contains prohibited terminology: '{actual_quote}'. "
-                            f"Approved preference is '{term.preferred_term}'."
-                        ) or "",
-                        suggestion=f"Replace with approved phrasing: '{term.preferred_term}'.",
-                        confidence=1.0,
+                if not (competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor)):
+                    actual_quote = content[start:end]
+                    related_guide = term.related_guideline_id or "GUIDE-001"
+                    evidence_text = build_evidence(knowledge, related_guide, None)
+                    findings.append(
+                        FindingDraft(
+                            source=FindingSource.RULE_ENGINE,
+                            category=FindingCategory.TERMINOLOGY,
+                            severity=Severity.HIGH,
+                            finding_type=FindingType.CONFIRMED_RULE_VIOLATION,
+                            original_text=actual_quote,
+                            start_offset=start,
+                            end_offset=end,
+                            guideline_id=related_guide,
+                            approved_term_id=term.id,
+                            evidence=evidence_text,
+                            explanation=sanitize_text(
+                                f"Contains prohibited terminology: '{actual_quote}'. "
+                                f"Approved preference is '{term.preferred_term}'."
+                            ) or "",
+                            suggestion=f"Replace with approved phrasing: '{term.preferred_term}'.",
+                            confidence=1.0,
+                        )
                     )
-                )
 
         # Check for Preferred Term usage
         if term.preferred_term:
@@ -173,6 +238,8 @@ def run_rule_engine(
         for match in TIMEFRAME_PATTERN.finditer(content):
             matched_text = match.group(0)
             start, end = match.start(), match.end()
+            if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
+                continue
             # If "guarantee" or "acne" is nearby or in content, this is high severity
             is_high = bool(re.search(r"acne|guarantee", content, re.IGNORECASE))
             evidence_text = build_evidence(knowledge, "GUIDE-003", "FACT-002")
@@ -202,6 +269,8 @@ def run_rule_engine(
         for match in GUARANTEE_PATTERN.finditer(content):
             matched_text = match.group(0)
             start, end = match.start(), match.end()
+            if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
+                continue
             # Expand to surrounding phrase if possible
             phrase_start = max(0, start - 15)
             phrase_end = min(len(content), end + 25)
@@ -234,6 +303,8 @@ def run_rule_engine(
     for regex, explanation in EXAGGERATED_CLAIMS:
         for match in regex.finditer(content):
             start, end = match.start(), match.end()
+            if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
+                continue
             if not any(f.start_offset is not None and abs(f.start_offset - start) < 5 for f in findings):
                 evidence_text = build_evidence(knowledge, "GUIDE-002", None)
                 findings.append(
@@ -256,8 +327,10 @@ def run_rule_engine(
     # 4b. Unapproved acne claims (e.g. "reduces acne") against FACT-001/FACT-002
     if "FACT-001" in knowledge.fact_codes():
         for match in UNAPPROVED_ACNE_CLAIM_PATTERN.finditer(content):
-            matched_text = match.group(0)
             start, end = match.start(), match.end()
+            if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
+                continue
+            matched_text = match.group(0)
             if not any(f.start_offset is not None and abs(f.start_offset - start) < 10 for f in findings):
                 evidence_text = build_evidence(knowledge, "GUIDE-003", "FACT-001")
                 findings.append(
@@ -281,11 +354,46 @@ def run_rule_engine(
                     )
                 )
 
-    # 5. Tone check positive observation
+    # 5. Comparative Superiority Claims
+    SUPERIORITY_PATTERN = re.compile(
+        r"\b(?:superior to|more effective than|better than|beats|outperforms|clinically superior to)\b",
+        re.IGNORECASE,
+    )
+    for match in SUPERIORITY_PATTERN.finditer(content):
+        start, end = match.start(), match.end()
+        matched_text = match.group(0)
+        sent_start = max(0, content.rfind(".", 0, start) + 1)
+        sent_end = content.find(".", end)
+        if sent_end == -1:
+            sent_end = len(content)
+        sentence_slice = content[sent_start:sent_end].strip()
+        evidence_text = build_evidence(knowledge, "GUIDE-003", None)
+        findings.append(
+            FindingDraft(
+                source=FindingSource.RULE_ENGINE,
+                category=FindingCategory.OUTCOME_CLAIM,
+                severity=Severity.MEDIUM,
+                finding_type=FindingType.UNSUPPORTED_CLAIM,
+                original_text=sentence_slice,
+                start_offset=start,
+                end_offset=end,
+                guideline_id="GUIDE-003",
+                evidence=evidence_text,
+                explanation=sanitize_text(
+                    f"Comparative superiority claim ('{matched_text}') requires substantiation with approved clinical evidence and human review."
+                ) or "",
+                suggestion="Ensure comparative superiority claims are substantiated by approved brand clinical facts before publication.",
+                confidence=0.90,
+            )
+        )
+
+    # 6. Tone check positive observation
     if "gentle, reassuring approach" in content.lower() or "simple addition to your skincare routine" in content.lower():
         positive_observations.append("Reflects friendly, reassuring and realistic tone aligned with brand guidelines.")
+    if "transparent" in content.lower() or "realistic" in content.lower():
+        positive_observations.append("Reflects transparent, realistic brand positioning aligned with approved voice standards.")
 
-    # 6. Insufficient context check
+    # 7. Insufficient context check
     # Distinguishes genuinely compliant content from content that lacks sufficient context for meaningful assessment.
     # If no rule violations were detected, verify that the content has sufficient brand/product substance.
     words = content.strip().split()

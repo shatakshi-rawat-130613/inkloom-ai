@@ -23,6 +23,7 @@ import pytest
 from uuid import UUID
 
 from app.enums import (
+    AIStatus,
     ContentType,
     FindingCategory,
     FindingType,
@@ -44,6 +45,7 @@ from app.services.submission_service import (
     record_review,
     request_review,
 )
+from app.validation import derive_overall_status
 from tests.fixtures.finora import FINORA_TEXT
 from tests.fixtures.harvest_and_hearth import HARVEST_AND_HEARTH_TEXT
 from tests.fixtures.lumacare_cases import COMPLIANT, NON_COMPLIANT, PARTIALLY_COMPLIANT
@@ -401,4 +403,219 @@ def test_scenario_electronics_brand_unrelated(seeded_db):
     assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
     assert len(result.findings) == 1
     assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+
+
+# ============================================================================
+# Regression Tests for Competitor Mentions and Comparative Market Context (A-F)
+# ============================================================================
+
+def test_scenario_a_lumacare_vs_velveteen_comparison(seeded_db):
+    """Test A: LumaCare versus Velveteen comparison -> RELEVANT_TO_BRAND.
+
+    Verifies:
+    - Active brand LumaCare and competitor Velveteen both discussed.
+    - Classifies as RELEVANT_TO_BRAND, not UNRELATED_TO_BRAND.
+    - Content adheres to approved LumaCare positioning ('supports clearer-looking skin').
+    - Evaluates as COMPLIANT (or does not generate false positive violations for competitor mentions).
+    """
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    comparison_text = (
+        "In the skincare market, consumers frequently compare LumaCare and Velveteen. "
+        "Velveteen is a luxury skincare brand promoting peptide formulas and aggressive rejuvenation claims. "
+        "In contrast, LumaCare offers a transparent, realistic approach and supports clearer-looking skin through "
+        "a gentle, daily regimen. By maintaining honest customer communication and avoiding exaggerated promises, "
+        "LumaCare builds lasting trust."
+    )
+
+    relevance = assess_brand_relevance(
+        comparison_text,
+        knowledge,
+        title="LumaCare vs Velveteen Market Comparison",
+        content_type="market_analysis",
+    )
+    assert relevance.status == BrandRelevance.RELEVANT_TO_BRAND
+    assert relevance.status == BrandRelevance.RELEVANT
+    assert relevance.reason_code is None
+
+    result = analyze_content(
+        comparison_text,
+        knowledge,
+        title="LumaCare vs Velveteen Market Comparison",
+        content_type="market_analysis",
+    )
+    assert not result.summary.startswith("UNRELATED TO ACTIVE BRAND")
+    assert not any(f.reference_note == "Reason code: UNRELATED_TO_BRAND" for f in result.findings)
+    assert not any(f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION for f in result.findings)
+    assert any("clearer-looking skin" in p.lower() or "transparent" in p.lower() for p in result.positive_observations)
+
+
+def test_scenario_b_velveteen_only_unrelated(seeded_db):
+    """Test B: Velveteen-only description -> UNRELATED_TO_BRAND."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    velveteen_only = (
+        "Velveteen is a luxury skincare label focused on anti-aging peptide creams and botanical face oils. "
+        "The company was founded in London with the mission to restore skin vitality through clinical formulations. "
+        "Velveteen provides daily creams and serums for sensitive skin."
+    )
+
+    relevance = assess_brand_relevance(
+        velveteen_only,
+        knowledge,
+        title="Velveteen Brand Overview",
+        content_type="product_description",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+    assert "Velveteen" in (relevance.detected_brand or "")
+
+    result = analyze_content(
+        velveteen_only,
+        knowledge,
+        title="Velveteen Brand Overview",
+        content_type="product_description",
+    )
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+    assert "Velveteen" in result.summary
+    assert len(result.findings) == 1
+    assert result.findings[0].reference_note == "Reason code: UNRELATED_TO_BRAND"
+
+
+def test_scenario_c_lumacare_only_approved_description(seeded_db):
+    """Test C: LumaCare-only approved description -> RELEVANT_TO_BRAND and COMPLIANT."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    approved_text = (
+        "Make your skincare routine simpler with LumaCare. Our gentle daily cream supports clearer-looking skin "
+        "through consistent hydration and dermatologist-tested care. Experience a realistic approach to healthy skin."
+    )
+
+    relevance = assess_brand_relevance(
+        approved_text,
+        knowledge,
+        title="LumaCare Daily Routine",
+        content_type="social_post",
+    )
+    assert relevance.status == BrandRelevance.RELEVANT_TO_BRAND
+
+    result = analyze_content(
+        approved_text,
+        knowledge,
+        title="LumaCare Daily Routine",
+        content_type="social_post",
+    )
+    assert not result.summary.startswith("UNRELATED TO ACTIVE BRAND")
+    assert not any(f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION for f in result.findings)
+    assert len(result.findings) == 0
+    assert derive_overall_status(result.findings, AIStatus.OK) == OverallStatus.COMPLIANT
+
+
+def test_scenario_d_incidental_mention_unrelated(seeded_db):
+    """Test D: LumaCare mentioned incidentally in an otherwise unrelated article -> UNRELATED_TO_BRAND."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    automotive_incidental_text = (
+        "Aurevia Motors is an electric vehicle manufacturer developing next-generation battery packs, "
+        "high-efficiency powertrains, and all-wheel-drive electric sedans. In our marketing operations, "
+        "we take customer-service inspiration from companies like LumaCare, but our core engineering "
+        "is focused entirely on automotive mileage, fast-charging infrastructure, and vehicle safety."
+    )
+
+    relevance = assess_brand_relevance(
+        automotive_incidental_text,
+        knowledge,
+        title="Aurevia Motors EV Innovation",
+        content_type="article",
+    )
+    assert relevance.status == BrandRelevance.UNRELATED_TO_BRAND
+    assert relevance.reason_code == "UNRELATED_TO_BRAND"
+
+    result = analyze_content(
+        automotive_incidental_text,
+        knowledge,
+        title="Aurevia Motors EV Innovation",
+        content_type="article",
+    )
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.summary.startswith("UNRELATED TO ACTIVE BRAND:")
+
+
+def test_scenario_e_market_comparison_relevant(seeded_db):
+    """Test E: LumaCare and a competitor mentioned in a market comparison -> RELEVANT_TO_BRAND."""
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    market_comp = (
+        "A comprehensive market analysis comparing LumaCare and AuraGlow in the topical skincare sector. "
+        "While AuraGlow targets clinical exfoliation treatments, LumaCare focuses on daily moisturization "
+        "that supports clearer-looking skin. Both brands have carved distinct niches in consumer skincare."
+    )
+
+    relevance = assess_brand_relevance(
+        market_comp,
+        knowledge,
+        title="Topical Skincare Market Analysis",
+        content_type="market_analysis",
+    )
+    assert relevance.status == BrandRelevance.RELEVANT_TO_BRAND
+    assert not relevance.reason_code
+
+    result = analyze_content(
+        market_comp,
+        knowledge,
+        title="Topical Skincare Market Analysis",
+        content_type="market_analysis",
+    )
+    assert not result.summary.startswith("UNRELATED TO ACTIVE BRAND")
+    assert not any(f.reference_note == "Reason code: UNRELATED_TO_BRAND" for f in result.findings)
+
+
+def test_scenario_f_competitor_superiority_claim(seeded_db):
+    """Test F: A competitor's unsupported superiority claim -> Human review, without incorrectly attributing it to LumaCare.
+
+    Verifies:
+    - When a competitor makes an aggressive claim (e.g. guarantees within 3 days or claims superiority),
+      it is not attributed as a confirmed rule violation committed by LumaCare.
+    - Requires human review (NEEDS_REVIEW) rather than falsely asserting LumaCare made a prohibited medical claim.
+    """
+    brand = seeded_db.query(BrandProfile).filter_by(slug="lumacare").one()
+    knowledge = brand_to_knowledge(brand)
+
+    competitor_claim_text = (
+        "Market report: Velveteen guarantees results within 3 days and claims its peptide serum is superior to LumaCare. "
+        "In response, LumaCare continues to advocate for a simple, realistic skincare routine that supports clearer-looking skin "
+        "without making unverified outcome promises."
+    )
+
+    relevance = assess_brand_relevance(
+        competitor_claim_text,
+        knowledge,
+        title="Skincare Comparison Brief",
+        content_type="market_analysis",
+    )
+    assert relevance.status == BrandRelevance.RELEVANT_TO_BRAND
+
+    result = analyze_content(
+        competitor_claim_text,
+        knowledge,
+        title="Skincare Comparison Brief",
+        content_type="market_analysis",
+    )
+    # The competitor's claim triggers review for substantiation
+    assert result.overall_status == OverallStatus.NEEDS_REVIEW
+    assert result.requires_human_review is True
+    # Crucially: LumaCare must NOT be flagged as having committed a confirmed rule violation for Velveteen's 3-day guarantee
+    assert not any(
+        f.finding_type == FindingType.CONFIRMED_RULE_VIOLATION and "lumacare" in f.explanation.lower()
+        for f in result.findings
+    )
+    # The superiority/comparative claim finding is an unsupported claim
+    assert any(f.finding_type == FindingType.UNSUPPORTED_CLAIM for f in result.findings)
+
 

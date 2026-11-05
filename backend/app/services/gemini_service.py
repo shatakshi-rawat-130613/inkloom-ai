@@ -41,7 +41,13 @@ RULES:
 8. Acknowledge positive brand alignment in 'positive_observations' (e.g. usage of preferred terms or reassuring tone).
 9. Do not flag harmless, realistic descriptions as violations.
 10. DO NOT use em dashes in explanations or suggestions. Use commas, semicolons, or hyphens instead.
-11. UNIVERSAL BRAND IDENTITY: Always evaluate content strictly for the active brand. If the submitted content describes, introduces, or belongs to another brand, company, or organization (regardless of whether it is in the same industry such as another skincare brand, or a different industry such as fintech, food, clothing, or electronics): DO NOT evaluate it against the active brand's guidelines, and DO NOT generate brand-specific violations or corrections for it. Instead, set requires_human_review to true, and add a single finding with category 'other', severity 'high', finding_type 'potential_issue', reference_note 'Reason code: UNRELATED_TO_BRAND', explaining that the content belongs to another brand and cannot be assessed against the active brand.
+11. UNIVERSAL BRAND IDENTITY: Always evaluate content strictly for the active brand. If the submitted content solely describes, introduces, or belongs to another brand, company, or organization (regardless of whether it is in the same industry such as another skincare brand, or a different industry such as fintech, food, clothing, or electronics) and does not substantively discuss the active brand: DO NOT evaluate it against the active brand's guidelines, and DO NOT generate active brand violations or corrections for it. Instead, set requires_human_review to true, and add a single finding with category 'other', severity 'high', finding_type 'potential_issue', reference_note 'Reason code: UNRELATED_TO_BRAND', explaining that the content belongs to another brand and cannot be assessed against the active brand.
+12. COMPETITOR COMPARISONS AND MULTI-BRAND CONTEXT: When submitted content discusses the active brand in comparison with competitors, alternative brands, or market peers:
+    - The content IS RELEVANT to the active brand. Do NOT classify it as UNRELATED_TO_BRAND.
+    - Evaluate statements made about the ACTIVE BRAND against the approved brand knowledge (guidelines, facts, and terminology).
+    - DO NOT apply active brand guidelines or product rules to claims that exclusively describe a competitor or other brand (e.g. competitor outcome guarantees or competitor timeframes).
+    - If the active brand makes unsupported comparative superiority claims over competitors without approved clinical evidence, classify them as 'unsupported_claim' with severity 'medium', requiring human review.
+    - Recognize positive alignment with the active brand's positioning (such as realistic, transparent communication and preferred terminology) in 'positive_observations'.
 """
 
 
