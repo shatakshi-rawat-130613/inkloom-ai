@@ -41,6 +41,7 @@ def get_health(db: Session = Depends(get_db)) -> HealthResponse:
 @router.get("/api/debug/ai")
 def debug_ai(
     model: str | None = Query(default=None, description="Optional model to test"),
+    skip_test: bool = Query(default=False, description="Skip generation test"),
 ) -> dict[str, Any]:
     """Diagnostic probe to verify Gemini API model availability and structured JSON output."""
     settings = get_settings()
@@ -74,16 +75,20 @@ def debug_ai(
         "output_summary": None,
     }
 
-    try:
-        client = genai.Client(api_key=settings.gemini_api_key)
-        config = types.GenerateContentConfig(
-            system_instruction="You are Inkloom AI. Evaluate content against brand standards.",
-            response_mime_type="application/json",
-            response_schema=AIAnalysisOutput,
-            temperature=0.0,
-        )
+    if not skip_test:
+        try:
+            client = genai.Client(
+                api_key=settings.gemini_api_key,
+                http_options=types.HttpOptions(timeout=20),
+            )
+            config = types.GenerateContentConfig(
+                system_instruction="You are Inkloom AI. Evaluate content against brand standards.",
+                response_mime_type="application/json",
+                response_schema=AIAnalysisOutput,
+                temperature=0.0,
+            )
 
-        test_prompt = """BRAND: LumaCare
+            test_prompt = """BRAND: LumaCare
 APPROVED GUIDELINES:
 - [GUIDE-001] No guaranteed outcomes (outcome_claim, severity: high): Do not promise guaranteed medical or skincare outcomes.
 - [GUIDE-002] Friendly and realistic tone (tone, severity: medium): Use friendly, reassuring and realistic messaging.
@@ -100,24 +105,24 @@ SUBMITTED CONTENT TO ANALYSE:
 "Our cream is designed to support clearer-looking skin. Enjoy a gentle, reassuring approach to everyday skincare."
 """
 
-        response = client.models.generate_content(
-            model=target_clean,
-            contents=test_prompt,
-            config=config,
-        )
+            response = client.models.generate_content(
+                model=target_clean,
+                contents=test_prompt,
+                config=config,
+            )
 
-        if response.text:
-            parsed = AIAnalysisOutput.model_validate_json(response.text)
-            test_result["success"] = True
-            test_result["output_summary"] = parsed.summary
-            test_result["findings_count"] = len(parsed.findings)
-            test_result["positive_observations"] = parsed.positive_observations
-        else:
-            test_result["exception_message"] = "Empty text in response"
+            if response.text:
+                parsed = AIAnalysisOutput.model_validate_json(response.text)
+                test_result["success"] = True
+                test_result["output_summary"] = parsed.summary
+                test_result["findings_count"] = len(parsed.findings)
+                test_result["positive_observations"] = parsed.positive_observations
+            else:
+                test_result["exception_message"] = "Empty text in response"
 
-    except Exception as exc:
-        test_result["exception_type"] = type(exc).__name__
-        test_result["exception_message"] = sanitize_error(exc)
+        except Exception as exc:
+            test_result["exception_type"] = type(exc).__name__
+            test_result["exception_message"] = sanitize_error(exc)
 
     return {
         "api_key_configured": True,
@@ -125,6 +130,6 @@ SUBMITTED CONTENT TO ANALYSE:
         "target_model": target_clean,
         "list_models_error": list_error,
         "available_models_count": len(available_models),
-        "available_models": available_models[:30],
-        "test_call": test_result,
+        "available_models": available_models,
+        "test_call": test_result if not skip_test else "skipped",
     }

@@ -90,7 +90,10 @@ Analyse the submitted content against the approved brand knowledge. Return a str
 """
 
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=settings.gemini_timeout_seconds),
+        )
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
