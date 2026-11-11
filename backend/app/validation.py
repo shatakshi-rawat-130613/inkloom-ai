@@ -22,15 +22,17 @@ from dataclasses import dataclass, field
 
 from app.enums import SEVERITY_RANK, AIStatus, FindingSource, FindingType, OverallStatus, Severity
 from app.schemas import AIAnalysisOutput, AIFinding, BrandKnowledge, FindingDraft
+from app.services.security_scanner import redact_sensitive_text
 
 _QUOTE_MAP = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
 _EM_DASH = re.compile(r"\s*\u2014\s*")
 
 
 def sanitize_text(text: str | None) -> str | None:
-    """Trim and replace em dashes (and en dashes) with plain punctuation."""
+    """Trim, redact sensitive credentials, and replace em dashes with plain punctuation."""
     if text is None:
         return None
+    text = redact_sensitive_text(text)
     text = _EM_DASH.sub(", ", text).replace("\u2013", "-")
     return text.strip()
 

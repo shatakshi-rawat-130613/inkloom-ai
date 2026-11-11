@@ -18,6 +18,7 @@ from google.genai import types
 from app.config import get_settings
 from app.enums import AIStatus
 from app.schemas import AIAnalysisOutput, BrandKnowledge
+from app.services.security_scanner import redact_sensitive_text
 from app.validation import VerificationResult, verify_ai_findings
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def sanitize_error(err: Exception | str) -> str:
     text = str(err)
-    return re.sub(r"AIza[0-9A-Za-z-_]{35}", "[REDACTED_API_KEY]", text)
+    return redact_sensitive_text(text)
 
 SYSTEM_PROMPT = """You are Inkloom AI, an intelligent brand-governance engine.
 Your mission is to evaluate marketing and communication content strictly against the provided brand knowledge.
@@ -48,6 +49,7 @@ RULES:
     - DO NOT apply active brand guidelines or product rules to claims that exclusively describe a competitor or other brand (e.g. competitor outcome guarantees or competitor timeframes).
     - If the active brand makes unsupported comparative superiority claims over competitors without approved clinical evidence, classify them as 'unsupported_claim' with severity 'medium', requiring human review.
     - Recognize positive alignment with the active brand's positioning (such as realistic, transparent communication and preferred terminology) in 'positive_observations'.
+13. SENSITIVE CREDENTIALS: If the submitted content contains apparent credentials, OAuth client secrets, API keys, passwords, private keys, or system configuration, do not reproduce or quote those secret values verbatim in findings or explanations.
 """
 
 

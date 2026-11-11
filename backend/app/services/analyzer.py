@@ -24,6 +24,11 @@ from app.services.relevance import (
     make_unrelated_finding,
 )
 from app.services.rule_engine import run_rule_engine
+from app.services.security_scanner import (
+    detect_credentials,
+    make_credential_finding,
+    make_technical_content_finding,
+)
 from app.validation import derive_overall_status, derive_requires_human_review
 
 RULE_ENGINE_VERSION = "1.0.0"
@@ -84,22 +89,41 @@ def analyze_content(
     relevance = assess_brand_relevance(content, knowledge, title=title, content_type=content_type)
 
     if relevance.status == BrandRelevance.UNRELATED_TO_BRAND:
-        finding = make_unrelated_finding(content, knowledge, detected_brand=relevance.detected_brand)
         duration_ms = int((time.perf_counter() - start_time) * 1000)
-        if relevance.detected_brand:
+        ai_stat = AIStatus.OK if settings.gemini_api_key else AIStatus.DISABLED
+
+        if relevance.reason_code == "SENSITIVE_CREDENTIALS_DETECTED":
+            cred_matches = detect_credentials(f"{title or ''}\n{content}".strip())
+            finding = make_credential_finding(content, cred_matches)
+            types_str = ", ".join(sorted({m.credential_type.value for m in cred_matches}))
             summary = (
-                f"UNRELATED TO ACTIVE BRAND: The submitted content appears to belong to a different brand "
-                f"('{relevance.detected_brand}') and cannot be evaluated against {knowledge.brand_name}'s "
-                f"approved guidelines and product information."
+                f"SECURITY WARNING: Sensitive credentials detected ({types_str}). "
+                f"Content contains apparent API keys, OAuth secrets, or configuration credentials and must not be published. "
+                f"Human review is required."
+            )
+        elif relevance.reason_code == "TECHNICAL_CONFIGURATION_CONTENT":
+            finding = make_technical_content_finding(content, knowledge)
+            summary = (
+                f"TECHNICAL DATA DETECTED: The submitted content consists of technical configuration, source code, or "
+                f"system data rather than brand communication copy. It cannot be evaluated against {knowledge.brand_name}'s "
+                f"approved guidelines. Human review is required."
             )
         else:
-            summary = (
-                f"UNRELATED TO ACTIVE BRAND: The submitted content appears to describe a brand, product category "
-                f"or industry that is unrelated to {knowledge.brand_name}, the currently active skincare brand. "
-                f"Its compliance cannot be reliably assessed against {knowledge.brand_name}'s approved guidelines "
-                f"and product information."
-            )
-        ai_stat = AIStatus.OK if settings.gemini_api_key else AIStatus.DISABLED
+            finding = make_unrelated_finding(content, knowledge, detected_brand=relevance.detected_brand)
+            if relevance.detected_brand:
+                summary = (
+                    f"UNRELATED TO ACTIVE BRAND: The submitted content appears to belong to a different brand "
+                    f"('{relevance.detected_brand}') and cannot be evaluated against {knowledge.brand_name}'s "
+                    f"approved guidelines and product information."
+                )
+            else:
+                summary = (
+                    f"UNRELATED TO ACTIVE BRAND: The submitted content appears to describe a brand, product category "
+                    f"or industry that is unrelated to {knowledge.brand_name}, the currently active skincare brand. "
+                    f"Its compliance cannot be reliably assessed against {knowledge.brand_name}'s approved guidelines "
+                    f"and product information."
+                )
+
         return CompleteAnalysisResult(
             overall_status=OverallStatus.NEEDS_REVIEW,
             summary=summary,

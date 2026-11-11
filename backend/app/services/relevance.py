@@ -20,6 +20,7 @@ from typing import Sequence
 
 from app.enums import FindingCategory, FindingSource, FindingType, Severity
 from app.schemas import BrandKnowledge, FindingDraft
+from app.services.security_scanner import detect_credentials, is_technical_or_configuration_content
 
 
 class BrandRelevance(StrEnum):
@@ -287,10 +288,32 @@ def assess_brand_relevance(
     token_matches = sum(1 for tok in brand_tokens if re.search(rf"\b{re.escape(tok)}\b", text_lower))
     has_comparative_framing = any(re.search(rf"\b{re.escape(m)}\b", text_lower) for m in COMPARATIVE_MARKERS)
 
+    # 0. Detect sensitive credentials (API keys, OAuth secrets, passwords)
+    cred_matches = detect_credentials(combined_text)
+    if cred_matches:
+        return RelevanceAssessment(
+            status=BrandRelevance.UNRELATED_TO_BRAND,
+            reason_code="SENSITIVE_CREDENTIALS_DETECTED",
+            explanation="SECURITY ALERT: Apparent sensitive credentials, API keys, or OAuth secrets detected in submitted content. Technical configuration and secrets cannot be evaluated as brand marketing copy.",
+            recommendation="Remove all sensitive credentials and secrets from the submission. Revoke and rotate any exposed keys immediately.",
+        )
+
     # -------------------------------------------------------------
     # CASE 1: ACTIVE BRAND IS NOT MENTIONED (brand_mentions == 0)
     # -------------------------------------------------------------
     if brand_mentions == 0:
+        # 1.05 Technical configuration or code content -> UNRELATED_TO_BRAND (not greeting)
+        if is_technical_or_configuration_content(content):
+            return RelevanceAssessment(
+                status=BrandRelevance.UNRELATED_TO_BRAND,
+                reason_code="TECHNICAL_CONFIGURATION_CONTENT",
+                explanation=(
+                    f"The submitted content consists of technical configuration, source code, or system data and does not constitute "
+                    f"brand marketing or communication copy. Its compliance cannot be evaluated against {brand_name}'s approved brand guidelines."
+                ),
+                recommendation=f"Submit customer-facing marketing, promotional, or brand communication copy intended for {brand_name}.",
+                detected_brand=None,
+            )
         # 1.1 An alternative brand is declared/introduced -> UNRELATED
         if detected_other:
             return RelevanceAssessment(
@@ -356,6 +379,18 @@ def assess_brand_relevance(
     # -------------------------------------------------------------
     # CASE 2: ACTIVE BRAND IS MENTIONED (brand_mentions > 0)
     # -------------------------------------------------------------
+    # 2.05 Technical configuration or code content even if brand is mentioned in string/code
+    if is_technical_or_configuration_content(content) and not (has_skincare_domain or has_preferred_term):
+        return RelevanceAssessment(
+            status=BrandRelevance.UNRELATED_TO_BRAND,
+            reason_code="TECHNICAL_CONFIGURATION_CONTENT",
+            explanation=(
+                f"The submitted content consists of technical configuration, source code, or system data and does not constitute "
+                f"brand marketing or communication copy. Its compliance cannot be evaluated against {brand_name}'s approved brand guidelines."
+            ),
+            recommendation=f"Submit customer-facing marketing, promotional, or brand communication copy intended for {brand_name}.",
+            detected_brand=None,
+        )
     # 2.1 Incidental mention in an unrelated commercial article:
     # If the text is overwhelmingly about an unrelated industry (e.g. automotive, fintech, food)
     # with no skincare substance and active brand is mentioned only once in passing.
