@@ -138,7 +138,7 @@ def extract_pdf_content(file_bytes: bytes, filename: str) -> tuple[str, dict[str
 
     meta: dict[str, Any] = {
         "page_count": len(reader.pages),
-        "extracted_pages": len(page_texts),
+        "extracted_pages": len(ocr_page_texts) if (len(full_text.strip()) < 10 and 'ocr_page_texts' in locals() and ocr_page_texts) else len(page_texts),
         "character_count": len(full_text),
         "word_count": len(full_text.split()) if full_text else 0,
         "is_encrypted": reader.is_encrypted,

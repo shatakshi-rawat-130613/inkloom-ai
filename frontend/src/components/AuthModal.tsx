@@ -59,11 +59,17 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     }
   }
 
+  const demoSeedPassword = import.meta.env.VITE_DEMO_SEED_PASSWORD || ''
+
   const handleQuickLogin = async (quickEmail: string) => {
+    if (!demoSeedPassword) {
+      setEmail(quickEmail)
+      return
+    }
     setError(null)
     setIsSubmitting(true)
     try {
-      await login({ email: quickEmail, password: 'LumaCareDemo2026!' })
+      await login({ email: quickEmail, password: demoSeedPassword })
       onClose()
     } catch (err) {
       if (err instanceof ApiError) {

@@ -1,3 +1,6 @@
+import os
+os.environ.setdefault("DEMO_SEED_PASSWORD", "LumaCareDemo2026!")
+
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker

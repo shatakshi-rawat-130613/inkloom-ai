@@ -16,7 +16,13 @@ from app.models import ApprovedFact, ApprovedTerm, BrandAsset, BrandGuideline, B
 
 DEMO_ORG_SLUG = "lumacare-demo"
 DEMO_BRAND_SLUG = "lumacare"
-DEMO_PASSWORD = get_settings().demo_seed_password
+def get_seed_password() -> str:
+    pwd = get_settings().demo_seed_password
+    if not pwd:
+        # Fall back to a secure dynamic password if not explicitly supplied via DEMO_SEED_PASSWORD
+        import secrets
+        return secrets.token_urlsafe(16) + "!Aa1"
+    return pwd
 
 ORGANISATION = {"slug": DEMO_ORG_SLUG, "name": "LumaCare (fictional demo organisation)"}
 
@@ -124,7 +130,7 @@ def seed_demo_data(db: Session) -> BrandProfile:
         db.add(org)
         db.flush()
 
-    default_pwd_hash = hash_password(DEMO_PASSWORD)
+    default_pwd_hash = hash_password(get_seed_password())
 
     for u in USERS:
         existing_user = db.scalar(select(User).where(User.email == u["email"]))

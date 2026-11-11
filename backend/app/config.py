@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
-    demo_seed_password: str = "LumaCareDemo2026!"
+    # DEMO_SEED_PASSWORD must be explicitly provided in environment.
+    # No fallback demo password is hardcoded to prevent unintentional production exposure.
+    demo_seed_password: str = ""
 
     max_content_chars: int = 10_000
     analyze_rate_limit_per_minute: int = 10

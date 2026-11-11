@@ -164,6 +164,14 @@ def run_gemini_vision_ocr(
     if not settings.gemini_api_key:
         return ""
 
+    # Auto-detect format from magic bytes to avoid MIME mismatches with Gemini API
+    if image_bytes.startswith(b"\xff\xd8"):
+        mime_type = "image/jpeg"
+    elif image_bytes.startswith(b"\x89PNG"):
+        mime_type = "image/png"
+    elif image_bytes.startswith(b"RIFF") and b"WEBP" in image_bytes[:16]:
+        mime_type = "image/webp"
+
     try:
         client = genai.Client(api_key=settings.gemini_api_key)
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
@@ -199,6 +207,14 @@ def run_gemini_logo_verification(
     settings = get_settings()
     if not settings.gemini_api_key:
         return "unable_to_determine", 0.5, "Gemini API key not configured for visual inspection."
+
+    # Auto-detect format from magic bytes to avoid MIME mismatches
+    if image_bytes.startswith(b"\xff\xd8"):
+        mime_type = "image/jpeg"
+    elif image_bytes.startswith(b"\x89PNG"):
+        mime_type = "image/png"
+    elif image_bytes.startswith(b"RIFF") and b"WEBP" in image_bytes[:16]:
+        mime_type = "image/webp"
 
     try:
         client = genai.Client(api_key=settings.gemini_api_key)
