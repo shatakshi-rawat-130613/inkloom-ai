@@ -57,11 +57,13 @@ def locate(quote: str, content: str) -> tuple[int, int] | None:
 def build_evidence(knowledge: BrandKnowledge, guideline_id: str | None, approved_fact_id: str | None) -> str | None:
     parts: list[str] = []
     if guideline_id:
-        g = next(g for g in knowledge.guidelines if g.id == guideline_id)
-        parts.append(f"{g.id}: {g.text}")
+        g = next((g for g in knowledge.guidelines if g.id == guideline_id), None)
+        if g:
+            parts.append(f"{g.id}: {g.text}")
     if approved_fact_id:
-        f = next(f for f in knowledge.facts if f.id == approved_fact_id)
-        parts.append(f"{f.id}: {f.statement}")
+        f = next((f for f in knowledge.facts if f.id == approved_fact_id), None)
+        if f:
+            parts.append(f"{f.id}: {f.statement}")
     return " ".join(parts) or None
 
 

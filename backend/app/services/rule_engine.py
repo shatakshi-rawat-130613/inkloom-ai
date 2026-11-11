@@ -167,6 +167,32 @@ def _is_attributed_to_competitor(
     return False
 
 
+def _resolve_guideline(
+    knowledge: BrandKnowledge,
+    preferred_code: str | None = None,
+    category: FindingCategory | None = None,
+) -> str | None:
+    codes = knowledge.guideline_codes()
+    if preferred_code and preferred_code in codes:
+        return preferred_code
+    if category:
+        cat_val = category.value if hasattr(category, "value") else str(category)
+        for g in knowledge.guidelines:
+            g_cat = g.category.value if hasattr(g.category, "value") else str(g.category)
+            if g_cat == cat_val:
+                return g.id
+    return knowledge.guidelines[0].id if knowledge.guidelines else None
+
+
+def _resolve_fact(
+    knowledge: BrandKnowledge,
+    preferred_code: str | None = None,
+) -> str | None:
+    if preferred_code and preferred_code in knowledge.fact_codes():
+        return preferred_code
+    return None
+
+
 def run_rule_engine(
     content: str,
     knowledge: BrandKnowledge,
@@ -197,7 +223,7 @@ def run_rule_engine(
                 start, end = match.start(), match.end()
                 if not (competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor)):
                     actual_quote = content[start:end]
-                    related_guide = term.related_guideline_id or "GUIDE-001"
+                    related_guide = _resolve_guideline(knowledge, term.related_guideline_id, FindingCategory.TERMINOLOGY)
                     evidence_text = build_evidence(knowledge, related_guide, None)
                     findings.append(
                         FindingDraft(
@@ -242,7 +268,9 @@ def run_rule_engine(
                 continue
             # If "guarantee" or "acne" is nearby or in content, this is high severity
             is_high = bool(re.search(r"acne|guarantee", content, re.IGNORECASE))
-            evidence_text = build_evidence(knowledge, "GUIDE-003", "FACT-002")
+            guide_id = _resolve_guideline(knowledge, "GUIDE-003", FindingCategory.TIMEFRAME)
+            fact_id = _resolve_fact(knowledge, "FACT-002")
+            evidence_text = build_evidence(knowledge, guide_id, fact_id)
             findings.append(
                 FindingDraft(
                     source=FindingSource.RULE_ENGINE,
@@ -252,8 +280,8 @@ def run_rule_engine(
                     original_text=matched_text,
                     start_offset=start,
                     end_offset=end,
-                    guideline_id="GUIDE-003",
-                    approved_fact_id="FACT-002",
+                    guideline_id=guide_id,
+                    approved_fact_id=fact_id,
                     evidence=evidence_text,
                     explanation=sanitize_text(
                         f"Specific timeframe '{matched_text}' is not an approved timeframe. "
@@ -285,7 +313,8 @@ def run_rule_engine(
 
             # Avoid duplicating an existing prohibited term finding on the same span
             if not any(f.start_offset is not None and abs(f.start_offset - start) < 10 for f in findings):
-                evidence_text = build_evidence(knowledge, "GUIDE-001", None)
+                guide_id = _resolve_guideline(knowledge, "GUIDE-001", FindingCategory.OUTCOME_CLAIM)
+                evidence_text = build_evidence(knowledge, guide_id, None)
                 findings.append(
                     FindingDraft(
                         source=FindingSource.RULE_ENGINE,
@@ -295,7 +324,7 @@ def run_rule_engine(
                         original_text=sentence_slice,
                         start_offset=start,
                         end_offset=end,
-                        guideline_id="GUIDE-001",
+                        guideline_id=guide_id,
                         evidence=evidence_text,
                         explanation=sanitize_text(
                             f"Contains promise of guaranteed outcome: '{matched_text}'. "
@@ -313,7 +342,8 @@ def run_rule_engine(
             if competitor and _is_attributed_to_competitor(start, end, content, knowledge.brand_name, competitor):
                 continue
             if not any(f.start_offset is not None and abs(f.start_offset - start) < 5 for f in findings):
-                evidence_text = build_evidence(knowledge, "GUIDE-002", None)
+                guide_id = _resolve_guideline(knowledge, "GUIDE-002", FindingCategory.TONE)
+                evidence_text = build_evidence(knowledge, guide_id, None)
                 findings.append(
                     FindingDraft(
                         source=FindingSource.RULE_ENGINE,
@@ -323,7 +353,7 @@ def run_rule_engine(
                         original_text=match.group(0),
                         start_offset=start,
                         end_offset=end,
-                        guideline_id="GUIDE-002",
+                        guideline_id=guide_id,
                         evidence=evidence_text,
                         explanation=sanitize_text(explanation) or "",
                         suggestion="Adopt friendly, realistic messaging.",
@@ -339,7 +369,9 @@ def run_rule_engine(
                 continue
             matched_text = match.group(0)
             if not any(f.start_offset is not None and abs(f.start_offset - start) < 10 for f in findings):
-                evidence_text = build_evidence(knowledge, "GUIDE-003", "FACT-001")
+                guide_id = _resolve_guideline(knowledge, "GUIDE-003", FindingCategory.OUTCOME_CLAIM)
+                fact_id = _resolve_fact(knowledge, "FACT-001")
+                evidence_text = build_evidence(knowledge, guide_id, fact_id)
                 findings.append(
                     FindingDraft(
                         source=FindingSource.RULE_ENGINE,
@@ -349,8 +381,8 @@ def run_rule_engine(
                         original_text=matched_text,
                         start_offset=start,
                         end_offset=end,
-                        guideline_id="GUIDE-003",
-                        approved_fact_id="FACT-001",
+                        guideline_id=guide_id,
+                        approved_fact_id=fact_id,
                         evidence=evidence_text,
                         explanation=sanitize_text(
                             f"Claim '{matched_text}' lacks approved supporting evidence in brand facts. "
@@ -374,7 +406,8 @@ def run_rule_engine(
         if sent_end == -1:
             sent_end = len(content)
         sentence_slice = content[sent_start:sent_end].strip()
-        evidence_text = build_evidence(knowledge, "GUIDE-003", None)
+        guide_id = _resolve_guideline(knowledge, "GUIDE-003", FindingCategory.FACTUAL_CONSISTENCY)
+        evidence_text = build_evidence(knowledge, guide_id, None)
         findings.append(
             FindingDraft(
                 source=FindingSource.RULE_ENGINE,
@@ -384,7 +417,7 @@ def run_rule_engine(
                 original_text=sentence_slice,
                 start_offset=start,
                 end_offset=end,
-                guideline_id="GUIDE-003",
+                guideline_id=guide_id,
                 evidence=evidence_text,
                 explanation=sanitize_text(
                     f"Comparative superiority claim ('{matched_text}') requires substantiation with approved clinical evidence and human review."
