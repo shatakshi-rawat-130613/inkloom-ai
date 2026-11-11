@@ -153,3 +153,107 @@ Analyse the submitted content against the approved brand knowledge. Return a str
         clean_err = sanitize_error(exc)
         logger.warning("Gemini analysis failed or timed out: %s (%s)", type(exc).__name__, clean_err)
         return None, None, AIStatus.UNAVAILABLE, f"{type(exc).__name__}: {clean_err}"
+
+
+def run_gemini_vision_ocr(
+    image_bytes: bytes,
+    mime_type: str = "image/png",
+) -> str:
+    """Extracts all visible text verbatim from an image using Gemini vision."""
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        return ""
+
+    try:
+        client = genai.Client(api_key=settings.gemini_api_key)
+        part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        prompt = (
+            "Extract all visible text, headlines, product claims, slogans, body copy, and fine print "
+            "from this promotional image or document page verbatim. Preserve line breaks. "
+            "Do not add commentary, pleasantries, or markdown fences. Return ONLY the exact extracted text."
+        )
+
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=[part, prompt],
+        )
+        return response.text.strip() if response.text else ""
+    except Exception as exc:
+        logger.warning("Gemini vision OCR error: %s", sanitize_error(exc))
+        return ""
+
+
+def run_gemini_logo_verification(
+    image_bytes: bytes,
+    brand_name: str,
+    logo_metadata: dict[str, Any],
+    mime_type: str = "image/png",
+) -> tuple[str, float, str]:
+    """Inspects a promotional creative for visual brand logo presence and accuracy.
+
+    Returns:
+        status: "approved_logo_detected", "possible_incorrect_logo", "expected_logo_not_detected", or "unable_to_determine"
+        confidence: float (0.0 to 1.0)
+        explanation: str description
+    """
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        return "unable_to_determine", 0.5, "Gemini API key not configured for visual inspection."
+
+    try:
+        client = genai.Client(api_key=settings.gemini_api_key)
+        part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+
+        logo_text = logo_metadata.get("text", brand_name)
+        acceptable_variants = logo_metadata.get("acceptable_variants", [brand_name])
+        primary_color = logo_metadata.get("primary_color", "")
+
+        prompt = f"""You are a brand design auditor.
+Examine this promotional marketing creative for the presence of the brand logo for '{brand_name}'.
+Approved logo specifications:
+- Brand/Wordmark text: '{logo_text}'
+- Acceptable variants: {acceptable_variants}
+- Expected primary color: {primary_color or 'Brand primary'}
+
+Task:
+Determine which of these 4 states best describes the visual logo presence in this image:
+1. APPROVED_LOGO_DETECTED: An authentic, approved {brand_name} logo or wordmark is clearly visible and correctly rendered.
+2. POSSIBLE_INCORRECT_LOGO: A distorted, altered, misspelled, unapproved variant, or competing brand logo appears instead of the approved logo.
+3. EXPECTED_LOGO_NOT_DETECTED: No brand logo or wordmark appears in this promotional image.
+4. UNABLE_TO_DETERMINE: Image resolution, cropping, or blurriness prevents reliable identification.
+
+Format your response as exactly 3 lines:
+STATUS: <one of APPROVED_LOGO_DETECTED | POSSIBLE_INCORRECT_LOGO | EXPECTED_LOGO_NOT_DETECTED | UNABLE_TO_DETERMINE>
+CONFIDENCE: <number between 0.0 and 1.0>
+EXPLANATION: <brief explanation without em dashes>
+"""
+
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=[part, prompt],
+        )
+        if not response.text:
+            return "unable_to_determine", 0.5, "Empty response from visual inspection."
+
+        status_match = re.search(r"STATUS:\s*([A-Z_]+)", response.text)
+        conf_match = re.search(r"CONFIDENCE:\s*([0-9.]+)", response.text)
+        exp_match = re.search(r"EXPLANATION:\s*(.+)", response.text)
+
+        status_str = status_match.group(1).lower() if status_match else "unable_to_determine"
+        confidence = float(conf_match.group(1)) if conf_match else 0.85
+        explanation = exp_match.group(1).strip() if exp_match else response.text.strip()
+
+        valid_statuses = {
+            "approved_logo_detected",
+            "possible_incorrect_logo",
+            "expected_logo_not_detected",
+            "unable_to_determine",
+        }
+        if status_str not in valid_statuses:
+            status_str = "unable_to_determine"
+
+        return status_str, confidence, explanation
+
+    except Exception as exc:
+        logger.warning("Gemini visual logo inspection error: %s", sanitize_error(exc))
+        return "unable_to_determine", 0.5, f"Visual inspection unavailable: {sanitize_error(exc)}"

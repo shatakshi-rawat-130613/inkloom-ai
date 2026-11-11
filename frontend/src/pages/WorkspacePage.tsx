@@ -1,7 +1,8 @@
 /**
  * Brand Workspace page.
- * Displays approved guidelines, facts, terminology, visual assets, and submission history
- * with multi-brand workspace switching and role-based management.
+ * Displays approved guidelines, facts, terminology, visual assets, and submission history.
+ * Supports complete multi-brand workspace management: brand creation, editing,
+ * guideline authoring, fact verification, terminology controls, and visual asset configuration.
  */
 
 import { useEffect, useState } from 'react'
@@ -10,19 +11,30 @@ import { api } from '../api/client'
 import type { BrandAssetResponse, BrandDetail, SubmissionListItem } from '../api/types'
 import { Skeleton } from '../components/Skeleton'
 import { CategoryBadge, OverallBadge, SeverityBadge, SubmissionStatusBadge } from '../components/StatusBadge'
+import { BrandModal } from '../components/BrandModal'
+import { KnowledgeModal } from '../components/KnowledgeModal'
 import { useAuth } from '../context/AuthContext'
 import { DEMO_TEST_CASES } from '../data/demoTestCases'
 
+type TabType = 'guidelines' | 'facts' | 'terms' | 'assets'
+
 export function WorkspacePage() {
   const navigate = useNavigate()
-  const { activeBrand } = useAuth()
+  const { activeBrand, user } = useAuth()
 
   const [brand, setBrand] = useState<BrandDetail | null>(null)
   const [assets, setAssets] = useState<BrandAssetResponse[]>([])
   const [submissions, setSubmissions] = useState<SubmissionListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'guidelines' | 'facts' | 'terms' | 'assets'>('guidelines')
+  const [activeTab, setActiveTab] = useState<TabType>('guidelines')
+
+  // Modals
+  const [isEditBrandOpen, setIsEditBrandOpen] = useState(false)
+  const [isKnowledgeModalOpen, setIsKnowledgeModalOpen] = useState(false)
+  const [knowledgeModalType, setKnowledgeModalType] = useState<'guideline' | 'fact' | 'term' | 'asset'>('guideline')
+
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     let mounted = true
@@ -36,7 +48,6 @@ export function WorkspacePage() {
         if (mounted) {
           setBrand(brandData)
           setSubmissions(subsData)
-          // Also fetch visual assets for this brand
           api.listBrandAssets(brandData.id)
             .then((assetList) => {
               if (mounted) setAssets(assetList)
@@ -62,6 +73,54 @@ export function WorkspacePage() {
   const handleLaunchTest = (testIndex: number) => {
     const test = DEMO_TEST_CASES[testIndex]
     navigate('/submissions/new', { state: test })
+  }
+
+  const openAddKnowledge = (tab: TabType) => {
+    if (tab === 'guidelines') setKnowledgeModalType('guideline')
+    else if (tab === 'facts') setKnowledgeModalType('fact')
+    else if (tab === 'terms') setKnowledgeModalType('term')
+    else if (tab === 'assets') setKnowledgeModalType('asset')
+    setIsKnowledgeModalOpen(true)
+  }
+
+  const handleDeleteGuideline = async (code: string) => {
+    if (!brand || !confirm(`Deactivate guideline ${code}?`)) return
+    try {
+      const updated = await api.deleteGuideline(brand.id, code)
+      setBrand(updated)
+    } catch {
+      alert('Failed to deactivate guideline.')
+    }
+  }
+
+  const handleDeleteFact = async (code: string) => {
+    if (!brand || !confirm(`Deactivate fact ${code}?`)) return
+    try {
+      const updated = await api.deleteFact(brand.id, code)
+      setBrand(updated)
+    } catch {
+      alert('Failed to deactivate fact.')
+    }
+  }
+
+  const handleDeleteTerm = async (code: string) => {
+    if (!brand || !confirm(`Deactivate term ${code}?`)) return
+    try {
+      const updated = await api.deleteTerm(brand.id, code)
+      setBrand(updated)
+    } catch {
+      alert('Failed to deactivate term.')
+    }
+  }
+
+  const handleDeleteAsset = async (assetId: string) => {
+    if (!brand || !confirm('Deactivate this visual asset?')) return
+    try {
+      const updatedList = await api.deleteBrandAsset(brand.id, assetId)
+      setAssets(updatedList)
+    } catch {
+      alert('Failed to deactivate visual asset.')
+    }
   }
 
   if (loading) {
@@ -108,9 +167,20 @@ export function WorkspacePage() {
               )}
             </div>
 
-            <h1 className="font-serif text-4xl font-bold tracking-tight text-ink">
-              {brand.name}
-            </h1>
+            <div className="flex items-center space-x-3">
+              <h1 className="font-serif text-4xl font-bold tracking-tight text-ink">
+                {brand.name}
+              </h1>
+              {isAdmin && !brand.is_demo && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditBrandOpen(true)}
+                  className="px-2.5 py-1 text-xs font-medium text-ink bg-parchment border border-parchment-deep rounded-sm hover:border-sage transition-colors"
+                >
+                  Edit Profile
+                </button>
+              )}
+            </div>
 
             <p className="text-sm text-ink-soft leading-relaxed">
               {brand.description}
@@ -165,73 +235,97 @@ export function WorkspacePage() {
         </section>
       )}
 
-      {/* Approved Brand Knowledge (Guidelines, Facts, Terminology, Visual Assets) */}
+      {/* Approved Brand Standards (Guidelines, Facts, Terminology, Visual Assets) */}
       <section className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-parchment-deep pb-3">
           <div>
             <h2 className="font-serif text-2xl font-bold text-ink">Approved Brand Standards</h2>
             <p className="text-xs text-ink-soft">
-              Deterministic guidelines, approved facts, terminology rules, and visual asset palette.
+              Deterministic guidelines, verified facts, approved terminology, and visual asset palette.
             </p>
           </div>
 
-          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
-            <button
-              onClick={() => setActiveTab('guidelines')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
-                activeTab === 'guidelines'
-                  ? 'bg-ink text-ivory'
-                  : 'bg-parchment text-ink-soft hover:text-ink'
-              }`}
-            >
-              Guidelines ({brand.guidelines.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('facts')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
-                activeTab === 'facts'
-                  ? 'bg-ink text-ivory'
-                  : 'bg-parchment text-ink-soft hover:text-ink'
-              }`}
-            >
-              Facts ({brand.facts.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('terms')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
-                activeTab === 'terms'
-                  ? 'bg-ink text-ivory'
-                  : 'bg-parchment text-ink-soft hover:text-ink'
-              }`}
-            >
-              Terminology ({brand.terms.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('assets')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
-                activeTab === 'assets'
-                  ? 'bg-ink text-ivory'
-                  : 'bg-parchment text-ink-soft hover:text-ink'
-              }`}
-            >
-              Visual Assets ({assets.length})
-            </button>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
+              <button
+                onClick={() => setActiveTab('guidelines')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                  activeTab === 'guidelines'
+                    ? 'bg-ink text-ivory'
+                    : 'bg-parchment text-ink-soft hover:text-ink'
+                }`}
+              >
+                Guidelines ({brand.guidelines.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('facts')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                  activeTab === 'facts'
+                    ? 'bg-ink text-ivory'
+                    : 'bg-parchment text-ink-soft hover:text-ink'
+                }`}
+              >
+                Facts ({brand.facts.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('terms')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                  activeTab === 'terms'
+                    ? 'bg-ink text-ivory'
+                    : 'bg-parchment text-ink-soft hover:text-ink'
+                }`}
+              >
+                Terminology ({brand.terms.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('assets')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                  activeTab === 'assets'
+                    ? 'bg-ink text-ivory'
+                    : 'bg-parchment text-ink-soft hover:text-ink'
+                }`}
+              >
+                Visual Assets ({assets.length})
+              </button>
+            </div>
+
+            {isAdmin && !brand.is_demo && (
+              <button
+                type="button"
+                onClick={() => openAddKnowledge(activeTab)}
+                className="px-3 py-1.5 text-xs font-semibold bg-sage text-ivory rounded-sm hover:bg-sage/90 transition-colors shrink-0"
+              >
+                + Add {activeTab.slice(0, -1)}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Tab Content */}
+        {/* Tab Content: Guidelines */}
         {activeTab === 'guidelines' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {brand.guidelines.map((guide) => (
               <div
                 key={guide.id}
-                className="bg-ivory border border-parchment-deep p-5 rounded-sm space-y-3"
+                className="bg-ivory border border-parchment-deep p-5 rounded-sm space-y-3 relative group"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono font-bold text-sage bg-sage-soft/40 px-2 py-0.5 rounded-sm border border-sage/20">
                     {guide.id}
                   </span>
-                  <SeverityBadge severity={guide.default_severity} />
+                  <div className="flex items-center space-x-2">
+                    <SeverityBadge severity={guide.default_severity} />
+                    {isAdmin && !brand.is_demo && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteGuideline(guide.id)}
+                        className="text-ink-soft hover:text-terracotta text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Deactivate rule"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <h3 className="font-serif text-base font-semibold text-ink">{guide.title}</h3>
                 <p className="text-xs text-ink-soft leading-relaxed">{guide.text}</p>
@@ -243,18 +337,31 @@ export function WorkspacePage() {
           </div>
         )}
 
+        {/* Tab Content: Facts */}
         {activeTab === 'facts' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {brand.facts.map((fact) => (
               <div
                 key={fact.id}
-                className="bg-ivory border border-parchment-deep p-5 rounded-sm space-y-3"
+                className="bg-ivory border border-parchment-deep p-5 rounded-sm space-y-3 relative group"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-mono font-bold text-sage bg-sage-soft/40 px-2 py-0.5 rounded-sm border border-sage/20">
                     {fact.id}
                   </span>
-                  <span className="text-xs text-ink-soft italic">Approved Fact</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-ink-soft italic">Approved Fact</span>
+                    {isAdmin && !brand.is_demo && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFact(fact.id)}
+                        className="text-ink-soft hover:text-terracotta text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Deactivate fact"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <p className="text-sm text-ink leading-relaxed font-serif">{fact.statement}</p>
                 {fact.source && (
@@ -267,22 +374,35 @@ export function WorkspacePage() {
           </div>
         )}
 
+        {/* Tab Content: Terminology */}
         {activeTab === 'terms' && (
           <div className="grid grid-cols-1 gap-6">
             {brand.terms.map((term) => (
               <div
                 key={term.id}
-                className="bg-ivory border border-parchment-deep p-6 rounded-sm space-y-4"
+                className="bg-ivory border border-parchment-deep p-6 rounded-sm space-y-4 relative group"
               >
                 <div className="flex items-center justify-between border-b border-parchment-deep/60 pb-3">
                   <span className="text-xs font-mono font-bold text-sage bg-sage-soft/40 px-2 py-0.5 rounded-sm border border-sage/20">
                     {term.id}
                   </span>
-                  {term.related_guideline_id && (
-                    <span className="text-xs text-ink-soft">
-                      Related: <span className="font-mono text-sage">{term.related_guideline_id}</span>
-                    </span>
-                  )}
+                  <div className="flex items-center space-x-3">
+                    {term.related_guideline_id && (
+                      <span className="text-xs text-ink-soft">
+                        Related: <span className="font-mono text-sage">{term.related_guideline_id}</span>
+                      </span>
+                    )}
+                    {isAdmin && !brand.is_demo && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTerm(term.id)}
+                        className="text-ink-soft hover:text-terracotta text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Deactivate term"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -315,6 +435,7 @@ export function WorkspacePage() {
           </div>
         )}
 
+        {/* Tab Content: Visual Assets */}
         {activeTab === 'assets' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {assets.length === 0 ? (
@@ -325,13 +446,25 @@ export function WorkspacePage() {
               assets.map((asset) => (
                 <div
                   key={asset.id}
-                  className="bg-ivory border border-parchment-deep p-6 rounded-sm space-y-4"
+                  className="bg-ivory border border-parchment-deep p-6 rounded-sm space-y-4 relative group"
                 >
                   <div className="flex items-center justify-between border-b border-parchment-deep pb-2">
                     <h3 className="font-serif text-base font-bold text-ink">{asset.name}</h3>
-                    <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 bg-parchment rounded text-sage border border-parchment-deep">
-                      {asset.asset_type.replace('_', ' ')}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 bg-parchment rounded text-sage border border-parchment-deep">
+                        {asset.asset_type.replace('_', ' ')}
+                      </span>
+                      {isAdmin && !brand.is_demo && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAsset(asset.id)}
+                          className="text-ink-soft hover:text-terracotta text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Deactivate asset"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {asset.asset_type === 'color_palette' && (
@@ -464,6 +597,30 @@ export function WorkspacePage() {
           </div>
         )}
       </section>
+
+      {/* Edit Brand Profile Modal */}
+      {brand && (
+        <BrandModal
+          isOpen={isEditBrandOpen}
+          onClose={() => setIsEditBrandOpen(false)}
+          brandToEdit={brand}
+          onBrandSaved={(updated) => setBrand(updated)}
+        />
+      )}
+
+      {/* Add Knowledge Entry Modal */}
+      {brand && (
+        <KnowledgeModal
+          isOpen={isKnowledgeModalOpen}
+          onClose={() => setIsKnowledgeModalOpen(false)}
+          brand={brand}
+          type={knowledgeModalType}
+          onSaved={(updated) => {
+            setBrand(updated)
+            api.listBrandAssets(brand.id).then((l) => setAssets(l)).catch(() => {})
+          }}
+        />
+      )}
     </div>
   )
 }

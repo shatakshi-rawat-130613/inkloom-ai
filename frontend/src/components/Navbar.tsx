@@ -1,7 +1,7 @@
 /**
  * Application Navigation Bar.
  * Clean, editorial, typography-driven header with service health indicator,
- * active brand workspace switcher, and role-based user session control.
+ * active brand workspace switcher, team management, and role-based user session control.
  */
 
 import { useEffect, useState } from 'react'
@@ -10,11 +10,16 @@ import { api } from '../api/client'
 import type { HealthResponse } from '../api/types'
 import { useAuth } from '../context/AuthContext'
 import { AuthModal } from './AuthModal'
+import { BrandModal } from './BrandModal'
+import { TeamModal } from './TeamModal'
 
 export function Navbar() {
   const location = useLocation()
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [isBrandModalOpen, setIsBrandModalOpen] = useState(false)
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false)
+
   const { user, logout, activeBrand, availableBrands, switchBrand } = useAuth()
 
   useEffect(() => {
@@ -51,12 +56,14 @@ export function Navbar() {
     }
   }
 
+  const isAdmin = user?.role === 'admin'
+
   return (
     <>
       <header className="border-b border-parchment-deep bg-ivory/95 sticky top-0 z-20 backdrop-blur-none">
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
           {/* Brand identity & Workspace switcher */}
-          <div className="flex items-center space-x-4 sm:space-x-6">
+          <div className="flex items-center space-x-3 sm:space-x-5">
             <Link to="/" className="flex items-baseline space-x-2 group">
               <span className="font-serif text-2xl font-bold tracking-tight text-ink group-hover:text-sage transition-colors">
                 Inkloom AI
@@ -68,31 +75,44 @@ export function Navbar() {
 
             <span className="hidden sm:inline-block h-4 w-px bg-parchment-deep" />
 
-            {/* Brand Switcher */}
-            {availableBrands.length > 1 ? (
-              <div className="hidden sm:inline-flex items-center">
-                <label htmlFor="brand-switcher" className="sr-only">Active Brand</label>
-                <select
-                  id="brand-switcher"
-                  value={activeBrand?.id || ''}
-                  onChange={(e) => {
-                    const sel = availableBrands.find((b) => b.id === e.target.value)
-                    if (sel) switchBrand(sel)
-                  }}
-                  className="px-2 py-1 text-xs text-ink font-medium bg-parchment rounded-sm border border-parchment-deep focus:outline-none focus:border-sage"
+            {/* Brand Switcher & Add Brand Button */}
+            <div className="hidden sm:inline-flex items-center space-x-2">
+              {availableBrands.length > 1 ? (
+                <div className="inline-flex items-center">
+                  <label htmlFor="brand-switcher" className="sr-only">Active Brand</label>
+                  <select
+                    id="brand-switcher"
+                    value={activeBrand?.id || ''}
+                    onChange={(e) => {
+                      const sel = availableBrands.find((b) => b.id === e.target.value)
+                      if (sel) switchBrand(sel)
+                    }}
+                    className="px-2 py-1 text-xs text-ink font-medium bg-parchment rounded-sm border border-parchment-deep focus:outline-none focus:border-sage"
+                  >
+                    {availableBrands.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} {b.is_demo ? '(Demo)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <span className="inline-flex items-center px-2 py-0.5 text-xs text-ink-soft bg-parchment rounded-sm border border-parchment-deep">
+                  Workspace: {activeBrand ? activeBrand.name : 'LumaCare Demo'}
+                </span>
+              )}
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsBrandModalOpen(true)}
+                  title="Create new brand in your organisation"
+                  className="px-2 py-1 text-[11px] font-semibold text-sage bg-sage/10 border border-sage/30 rounded-sm hover:bg-sage hover:text-ivory transition-colors"
                 >
-                  {availableBrands.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} {b.is_demo ? '(Demo)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 text-xs text-ink-soft bg-parchment rounded-sm border border-parchment-deep">
-                Workspace: {activeBrand ? activeBrand.name : 'LumaCare Demo'}
-              </span>
-            )}
+                  + Brand
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Navigation links, auth controls & health status */}
@@ -116,10 +136,18 @@ export function Navbar() {
               })}
             </nav>
 
-            {/* User Session Control */}
+            {/* User Session & Team Control */}
             <div className="flex items-center pl-2 sm:pl-3 border-l border-parchment-deep space-x-2">
               {user ? (
                 <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsTeamModalOpen(true)}
+                    className="px-2 py-1 text-xs font-medium text-ink bg-parchment border border-parchment-deep rounded-sm hover:border-sage transition-colors"
+                  >
+                    Team
+                  </button>
+
                   <div className="text-right hidden md:block">
                     <div className="text-xs font-semibold text-ink leading-tight">
                       {user.display_name}
@@ -128,6 +156,7 @@ export function Navbar() {
                       {getRoleLabel(user.role)}
                     </div>
                   </div>
+
                   <button
                     onClick={logout}
                     className="px-2.5 py-1 text-xs font-medium text-ink-soft bg-parchment border border-parchment-deep rounded-sm hover:text-ink hover:bg-parchment-deep transition-colors"
@@ -167,6 +196,8 @@ export function Navbar() {
       </header>
 
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+      <BrandModal isOpen={isBrandModalOpen} onClose={() => setIsBrandModalOpen(false)} />
+      <TeamModal isOpen={isTeamModalOpen} onClose={() => setIsTeamModalOpen(false)} />
     </>
   )
 }

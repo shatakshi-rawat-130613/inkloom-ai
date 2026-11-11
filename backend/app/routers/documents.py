@@ -14,13 +14,14 @@ from app.models import BrandProfile, DocumentExtraction, User
 from app.schemas import DocumentExtractResponse, FindingDraft
 from app.services.document_service import (
     analyze_image_visual_compliance,
+    extract_docx_content,
     extract_pdf_content,
     extract_text_content,
 )
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
@@ -52,6 +53,7 @@ async def extract_document(
 
     # Load brand assets if brand_id provided
     brand_assets = []
+    brand_name = ""
     if brand_id:
         brand = db.scalar(
             select(BrandProfile)
@@ -60,18 +62,29 @@ async def extract_document(
         )
         if brand:
             brand_assets = brand.assets
+            brand_name = brand.name
 
     visual_findings: list[FindingDraft] = []
 
     if ext == ".pdf":
         try:
             extracted_text, metadata = extract_pdf_content(file_bytes, filename)
-            source = "document"
+            source = metadata.get("source", "document")
             ftype = "pdf"
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Failed to parse PDF document: {str(e)}",
+            )
+    elif ext == ".docx":
+        try:
+            extracted_text, metadata = extract_docx_content(file_bytes, filename)
+            source = "document"
+            ftype = "docx"
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Failed to parse Word (.docx) document: {str(e)}",
             )
     elif ext in {".txt", ".md"}:
         try:
@@ -86,9 +99,9 @@ async def extract_document(
     else:  # Image formats
         try:
             extracted_text, metadata, visual_findings = analyze_image_visual_compliance(
-                file_bytes, filename, brand_assets=brand_assets
+                file_bytes, filename, brand_name=brand_name, brand_assets=brand_assets
             )
-            source = "visual"
+            source = metadata.get("source", "visual")
             ftype = f"image/{ext.lstrip('.')}"
         except Exception as e:
             raise HTTPException(

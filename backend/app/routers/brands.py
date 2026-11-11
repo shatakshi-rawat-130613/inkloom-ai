@@ -378,3 +378,141 @@ def create_brand_asset(
     db.commit()
     db.refresh(asset)
     return _asset_to_response(asset)
+
+
+@router.delete("/{brand_id}/guidelines/{code}", response_model=BrandDetail)
+def delete_guideline(
+    brand_id: UUID,
+    code: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Session = Depends(get_db),
+) -> BrandDetail:
+    """Deactivate a guideline rule. Requires Brand Manager (ADMIN)."""
+    brand = db.get(BrandProfile, brand_id)
+    if not brand or brand.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Brand '{brand_id}' not found."},
+        )
+    g = db.scalar(
+        select(BrandGuideline).where(
+            BrandGuideline.brand_id == brand.id,
+            BrandGuideline.code == code.strip().upper(),
+        )
+    )
+    if g:
+        g.is_active = False
+        db.commit()
+
+    stmt = (
+        select(BrandProfile)
+        .where(BrandProfile.id == brand_id)
+        .options(
+            selectinload(BrandProfile.guidelines),
+            selectinload(BrandProfile.facts),
+            selectinload(BrandProfile.terms),
+            selectinload(BrandProfile.assets),
+        )
+    )
+    return brand_to_detail(db.scalar(stmt))
+
+
+@router.delete("/{brand_id}/facts/{code}", response_model=BrandDetail)
+def delete_fact(
+    brand_id: UUID,
+    code: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Session = Depends(get_db),
+) -> BrandDetail:
+    """Deactivate an approved factual statement. Requires Brand Manager (ADMIN)."""
+    brand = db.get(BrandProfile, brand_id)
+    if not brand or brand.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Brand '{brand_id}' not found."},
+        )
+    f = db.scalar(
+        select(ApprovedFact).where(
+            ApprovedFact.brand_id == brand.id,
+            ApprovedFact.code == code.strip().upper(),
+        )
+    )
+    if f:
+        f.is_active = False
+        db.commit()
+
+    stmt = (
+        select(BrandProfile)
+        .where(BrandProfile.id == brand_id)
+        .options(
+            selectinload(BrandProfile.guidelines),
+            selectinload(BrandProfile.facts),
+            selectinload(BrandProfile.terms),
+            selectinload(BrandProfile.assets),
+        )
+    )
+    return brand_to_detail(db.scalar(stmt))
+
+
+@router.delete("/{brand_id}/terms/{code}", response_model=BrandDetail)
+def delete_term(
+    brand_id: UUID,
+    code: str,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Session = Depends(get_db),
+) -> BrandDetail:
+    """Deactivate an approved term rule. Requires Brand Manager (ADMIN)."""
+    brand = db.get(BrandProfile, brand_id)
+    if not brand or brand.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Brand '{brand_id}' not found."},
+        )
+    t = db.scalar(
+        select(ApprovedTerm).where(
+            ApprovedTerm.brand_id == brand.id,
+            ApprovedTerm.code == code.strip().upper(),
+        )
+    )
+    if t:
+        t.is_active = False
+        db.commit()
+
+    stmt = (
+        select(BrandProfile)
+        .where(BrandProfile.id == brand_id)
+        .options(
+            selectinload(BrandProfile.guidelines),
+            selectinload(BrandProfile.facts),
+            selectinload(BrandProfile.terms),
+            selectinload(BrandProfile.assets),
+        )
+    )
+    return brand_to_detail(db.scalar(stmt))
+
+
+@router.delete("/{brand_id}/assets/{asset_id}", response_model=list[BrandAssetResponse])
+def delete_brand_asset(
+    brand_id: UUID,
+    asset_id: UUID,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Session = Depends(get_db),
+) -> list[BrandAssetResponse]:
+    """Deactivate a visual brand asset. Requires Brand Manager (ADMIN)."""
+    brand = db.get(BrandProfile, brand_id)
+    if not brand or brand.organisation_id != current_user.organisation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Brand '{brand_id}' not found."},
+        )
+    asset = db.get(BrandAsset, asset_id)
+    if asset and asset.brand_id == brand.id:
+        asset.is_active = False
+        db.commit()
+
+    assets = db.scalars(
+        select(BrandAsset)
+        .where(BrandAsset.brand_id == brand_id, BrandAsset.is_active.is_(True))
+        .order_by(BrandAsset.created_at)
+    ).all()
+    return [_asset_to_response(a) for a in assets]

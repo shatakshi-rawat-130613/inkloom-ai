@@ -59,18 +59,30 @@ export function SubmitPage() {
         setTitle(file.name.replace(/\.[^/.]+$/, ''))
       }
 
-      if (res.file_type.startsWith('image/')) {
+      if (res.extraction_source === 'ocr' || res.extraction_metadata?.has_ocr_text) {
+        setContentType('advertisement')
+        setVisualNotice(
+          `Extracted ${res.extraction_metadata?.word_count || 0} words from promotional image via Multimodal OCR. Please review copy before analysis.`
+        )
+      } else if (res.file_type.startsWith('image/')) {
         setContentType('advertisement')
         if (res.visual_findings && res.visual_findings.length > 0) {
           setVisualNotice(
             `Extracted image palette and detected ${res.visual_findings.length} visual compliance observation(s).`
           )
         } else {
-          setVisualNotice('Visual image colors and dimensions verified against brand palette.')
+          setVisualNotice('Visual image colors, logo standards and dimensions verified against brand palette.')
         }
+      } else if (res.file_type === 'docx') {
+        setContentType('press_release')
+        setVisualNotice(`Extracted ${res.extraction_metadata?.paragraph_count || 0} paragraphs from Word (.docx) document.`)
       } else if (res.file_type === 'pdf') {
         setContentType('product_description')
-        setVisualNotice(`Extracted ${res.extraction_metadata.page_count || 1} page(s) from PDF document.`)
+        if (res.extraction_source === 'ocr') {
+          setVisualNotice(`Extracted text from scanned PDF via Multimodal OCR.`)
+        } else {
+          setVisualNotice(`Extracted ${res.extraction_metadata?.page_count || 1} page(s) from PDF document.`)
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to extract document contents.'
@@ -153,7 +165,7 @@ export function SubmitPage() {
           <span className="text-xs uppercase tracking-wider font-semibold text-ink">
             Document & Visual Asset Ingestion
           </span>
-          <span className="text-[11px] text-ink-soft">Supports PDF, TXT, PNG, JPG, WEBP (up to 10MB)</span>
+          <span className="text-[11px] text-ink-soft">Supports PDF, DOCX, TXT, PNG, JPG, WEBP (up to 10MB)</span>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -161,7 +173,7 @@ export function SubmitPage() {
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept=".pdf,.txt,.md,.png,.jpg,.jpeg,.webp"
+            accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
             className="hidden"
           />
           <button

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
+    demo_seed_password: str = "LumaCareDemo2026!"
+
     max_content_chars: int = 10_000
     analyze_rate_limit_per_minute: int = 10
 

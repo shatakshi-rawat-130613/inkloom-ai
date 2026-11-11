@@ -156,6 +156,26 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  deleteGuideline: (brandId: UUID, code: string) =>
+    request<BrandDetail>(`/api/brands/${brandId}/guidelines/${code}`, {
+      method: 'DELETE',
+    }),
+
+  deleteFact: (brandId: UUID, code: string) =>
+    request<BrandDetail>(`/api/brands/${brandId}/facts/${code}`, {
+      method: 'DELETE',
+    }),
+
+  deleteTerm: (brandId: UUID, code: string) =>
+    request<BrandDetail>(`/api/brands/${brandId}/terms/${code}`, {
+      method: 'DELETE',
+    }),
+
+  deleteBrandAsset: (brandId: UUID, assetId: UUID) =>
+    request<BrandAssetResponse[]>(`/api/brands/${brandId}/assets/${assetId}`, {
+      method: 'DELETE',
+    }),
+
   // Documents & Visual Ingestion
   extractDocument: async (file: File, brandId?: UUID) => {
     const formData = new FormData()

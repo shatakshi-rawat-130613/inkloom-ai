@@ -10,12 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
+from app.config import get_settings
 from app.enums import FindingCategory, Severity, UserRole
 from app.models import ApprovedFact, ApprovedTerm, BrandAsset, BrandGuideline, BrandProfile, Organisation, User
 
 DEMO_ORG_SLUG = "lumacare-demo"
 DEMO_BRAND_SLUG = "lumacare"
-DEMO_PASSWORD = "LumaCareDemo2026!"
+DEMO_PASSWORD = get_settings().demo_seed_password
 
 ORGANISATION = {"slug": DEMO_ORG_SLUG, "name": "LumaCare (fictional demo organisation)"}
 
