@@ -248,7 +248,7 @@ ana_r = requests.post(
     f"{API_BASE}/submissions/{sub_id}/analyze",
     headers={"Authorization": f"Bearer {ed_token}"},
 )
-assert ana_r.status_code == 200, f"Analysis failed: {ana_r.status_code} {ana_r.text}"
+assert ana_r.status_code in (200, 201), f"Analysis failed: {ana_r.status_code} {ana_r.text}"
 ana_res = ana_r.json()
 findings = ana_res.get("findings", [])
 print(f"[PASS] 16. Automated Governance Analysis: Status={ana_res['overall_status']}, Findings={len(findings)}")
@@ -261,10 +261,11 @@ print("[PASS] 17. Brand Rule Grounding: Prohibited Term 'miracle cure' Flagged")
 # 6. HUMAN REVIEW WORKFLOW
 # Editor requests human review
 rev_req_r = requests.post(
-    f"{API_BASE}/submissions/{sub_id}/request-review",
+    f"{API_BASE}/submissions/{sub_id}/review-request",
     headers={"Authorization": f"Bearer {ed_token}"},
+    json={"note": "Ready for brand safety review."},
 )
-assert rev_req_r.status_code == 200
+assert rev_req_r.status_code in (200, 201), f"Review request failed: {rev_req_r.status_code} {rev_req_r.text}"
 print("[PASS] 18. Human Review Request by Creator")
 
 # Reviewer submits review decision (REQUEST_CHANGES)
@@ -272,11 +273,12 @@ rev_dec_r = requests.post(
     f"{API_BASE}/submissions/{sub_id}/reviews",
     headers={"Authorization": f"Bearer {rev_token}"},
     json={
-        "decision": "request_changes",
+        "decision": "revisions_requested",
+        "reviewer_name": f"Reviewer {tag}",
         "comments": "Please remove 'miracle cure' and 'guaranteed within 7 days' claims.",
     },
 )
-assert rev_dec_r.status_code == 200
+assert rev_dec_r.status_code in (200, 201), f"Review decision failed: {rev_dec_r.status_code} {rev_dec_r.text}"
 print("[PASS] 19. Reviewer Decision Execution: Request Changes")
 
 # 7. VERSIONING AND REPEATED RUN PERSISTENCE
@@ -300,7 +302,7 @@ ana2_r = requests.post(
     f"{API_BASE}/submissions/{sub_id}/analyze",
     headers={"Authorization": f"Bearer {ed_token}"},
 )
-assert ana2_r.status_code == 200
+assert ana2_r.status_code in (200, 201), f"Analysis v2 failed: {ana2_r.status_code} {ana2_r.text}"
 ana2_res = ana2_r.json()
 print(f"[PASS] 21. Re-Analysis on v2: Status={ana2_res['overall_status']}")
 
