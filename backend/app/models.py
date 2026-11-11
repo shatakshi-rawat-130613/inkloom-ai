@@ -97,7 +97,7 @@ class Organisation(Base):
 
 
 class User(Base):
-    """Seeded demo identities. No authentication in the MVP."""
+    """User identities with authentication and role-based permissions."""
 
     __tablename__ = "users"
 
@@ -105,7 +105,9 @@ class User(Base):
     organisation_id: Mapped[uuid.UUID] = _fk("organisations.id")
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(254), unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(_enum(UserRole, "user_role"), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = _created_at()
 
     organisation: Mapped[Organisation] = relationship(back_populates="users")
@@ -133,6 +135,43 @@ class BrandProfile(Base):
     )
     facts: Mapped[list["ApprovedFact"]] = relationship(back_populates="brand", order_by="ApprovedFact.code")
     terms: Mapped[list["ApprovedTerm"]] = relationship(back_populates="brand", order_by="ApprovedTerm.code")
+    assets: Mapped[list["BrandAsset"]] = relationship(back_populates="brand", order_by="BrandAsset.created_at")
+
+
+class BrandAsset(Base):
+    """Visual brand assets: approved logos, color palettes, visual guidelines."""
+
+    __tablename__ = "brand_assets"
+
+    id: Mapped[uuid.UUID] = _pk()
+    brand_id: Mapped[uuid.UUID] = _fk("brand_profiles.id")
+    asset_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "logo", "color_palette", "visual_guideline"
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    file_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    asset_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = _created_at()
+
+    brand: Mapped[BrandProfile] = relationship(back_populates="assets")
+
+
+class DocumentExtraction(Base):
+    """Uploaded documents and promotional images with extracted text representations."""
+
+    __tablename__ = "document_extractions"
+
+    id: Mapped[uuid.UUID] = _pk()
+    submission_id: Mapped[uuid.UUID | None] = _fk("content_submissions.id", nullable=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "pdf", "txt", "image/png", etc.
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    extraction_source: Mapped[str] = mapped_column(String(50), nullable=False)  # "document", "ocr", "visual"
+    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    extraction_status: Mapped[str] = mapped_column(String(50), nullable=False, default="completed")
+    extraction_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = _created_at()
 
 
 class BrandGuideline(Base):

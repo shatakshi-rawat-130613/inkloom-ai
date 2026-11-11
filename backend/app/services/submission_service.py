@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.enums import (
@@ -15,6 +15,7 @@ from app.enums import (
     ReviewDecision,
     SubmissionAction,
     SubmissionStatus,
+    UserRole,
 )
 from app.mappers import brand_to_knowledge
 from app.models import (
@@ -25,6 +26,7 @@ from app.models import (
     ContentSubmission,
     ContentVersion,
     HumanReview,
+    User,
 )
 from app.schemas import (
     AnalysisRun as AnalysisRunSchema,
@@ -72,6 +74,16 @@ def log_audit(
         details=details or {},
     )
     db.add(entry)
+
+
+def verify_submission_access(sub: ContentSubmission, user: User | None) -> None:
+    if sub.brand and sub.brand.is_demo:
+        return
+    if user is None or (sub.brand and sub.brand.organisation_id != user.organisation_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Submission {sub.id} not found."},
+        )
 
 
 def _to_run_summary(run: AnalysisRun) -> AnalysisRunSummary:
@@ -139,7 +151,11 @@ def _to_run_schema(run: AnalysisRun) -> AnalysisRunSchema:
     )
 
 
-def create_submission(db: Session, payload: SubmissionCreate) -> ContentSubmission:
+def create_submission(
+    db: Session,
+    payload: SubmissionCreate,
+    current_user: User | None = None,
+) -> ContentSubmission:
     brand = db.get(BrandProfile, payload.brand_id)
     if not brand:
         raise HTTPException(
@@ -147,13 +163,28 @@ def create_submission(db: Session, payload: SubmissionCreate) -> ContentSubmissi
             detail={"code": "not_found", "message": f"Brand {payload.brand_id} not found."},
         )
 
+    if not brand.is_demo:
+        if current_user is None or brand.organisation_id != current_user.organisation_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"code": "not_found", "message": f"Brand {payload.brand_id} not found."},
+            )
+
+    if current_user is not None and current_user.role == UserRole.REVIEWER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reviewers are not permitted to create content submissions.",
+        )
+
+    author = current_user.display_name if current_user else (payload.author_name or "Demo Editor")
+
     submission = ContentSubmission(
         brand_id=brand.id,
         title=payload.title,
         content_type=payload.content_type,
         status=SubmissionStatus.DRAFT,
         current_version_number=1,
-        author_name=payload.author_name or "Demo Editor",
+        author_name=author,
     )
     db.add(submission)
     db.flush()
@@ -188,6 +219,7 @@ def list_submissions(
     submission_status: SubmissionStatus | None = None,
     limit: int = 50,
     offset: int = 0,
+    current_user: User | None = None,
 ) -> list[SubmissionListItem]:
     stmt = (
         select(ContentSubmission)
@@ -199,6 +231,17 @@ def list_submissions(
         .offset(offset)
         .limit(limit)
     )
+
+    if current_user is not None:
+        stmt = stmt.join(ContentSubmission.brand).where(
+            or_(
+                BrandProfile.is_demo.is_(True),
+                BrandProfile.organisation_id == current_user.organisation_id,
+            )
+        )
+    else:
+        stmt = stmt.join(ContentSubmission.brand).where(BrandProfile.is_demo.is_(True))
+
     if brand_id:
         stmt = stmt.where(ContentSubmission.brand_id == brand_id)
     if submission_status:
@@ -230,7 +273,11 @@ def list_submissions(
     return items
 
 
-def get_submission_detail(db: Session, submission_id: UUID) -> SubmissionDetail:
+def get_submission_detail(
+    db: Session,
+    submission_id: UUID,
+    current_user: User | None = None,
+) -> SubmissionDetail:
     stmt = (
         select(ContentSubmission)
         .where(ContentSubmission.id == submission_id)
@@ -256,6 +303,7 @@ def get_submission_detail(db: Session, submission_id: UUID) -> SubmissionDetail:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
         )
+    verify_submission_access(sub, current_user)
 
     versions_out: list[ContentVersionSchema] = []
     for v in sub.versions:
@@ -315,12 +363,28 @@ def get_submission_detail(db: Session, submission_id: UUID) -> SubmissionDetail:
     )
 
 
-def create_version(db: Session, submission_id: UUID, payload: VersionCreate) -> ContentSubmission:
-    sub = db.get(ContentSubmission, submission_id)
+def create_version(
+    db: Session,
+    submission_id: UUID,
+    payload: VersionCreate,
+    current_user: User | None = None,
+) -> ContentSubmission:
+    sub = db.scalar(
+        select(ContentSubmission)
+        .where(ContentSubmission.id == submission_id)
+        .options(selectinload(ContentSubmission.brand))
+    )
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
+        )
+    verify_submission_access(sub, current_user)
+
+    if current_user is not None and current_user.role == UserRole.REVIEWER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Reviewers are not permitted to create content revisions.",
         )
 
     if sub.status in (SubmissionStatus.IN_REVIEW, SubmissionStatus.APPROVED, SubmissionStatus.REJECTED):
@@ -341,13 +405,14 @@ def create_version(db: Session, submission_id: UUID, payload: VersionCreate) -> 
     sub.status = SubmissionStatus.DRAFT
     db.flush()
 
+    actor = current_user.display_name if current_user else sub.author_name
     log_audit(
         db,
         submission_id=sub.id,
         entity_type="content_version",
         entity_id=new_v.id,
         action="version_created",
-        actor_name=sub.author_name,
+        actor_name=actor,
         details={"version_number": next_version_num, "change_note": payload.change_note},
     )
 
@@ -356,7 +421,11 @@ def create_version(db: Session, submission_id: UUID, payload: VersionCreate) -> 
     return sub
 
 
-def analyze_submission(db: Session, submission_id: UUID) -> AnalysisRunSchema:
+def analyze_submission(
+    db: Session,
+    submission_id: UUID,
+    current_user: User | None = None,
+) -> AnalysisRunSchema:
     stmt = (
         select(ContentSubmission)
         .where(ContentSubmission.id == submission_id)
@@ -373,6 +442,7 @@ def analyze_submission(db: Session, submission_id: UUID) -> AnalysisRunSchema:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
         )
+    verify_submission_access(sub, current_user)
 
     if sub.status in (SubmissionStatus.IN_REVIEW, SubmissionStatus.APPROVED, SubmissionStatus.REJECTED):
         raise HTTPException(
@@ -454,14 +524,19 @@ def analyze_submission(db: Session, submission_id: UUID) -> AnalysisRunSchema:
     db.commit()
 
     # Reload with relations to construct full schema
-    return get_analysis_run(db, run.id)
+    return get_analysis_run(db, run.id, current_user=current_user)
 
 
-def get_analysis_run(db: Session, run_id: UUID) -> AnalysisRunSchema:
+def get_analysis_run(
+    db: Session,
+    run_id: UUID,
+    current_user: User | None = None,
+) -> AnalysisRunSchema:
     stmt = (
         select(AnalysisRun)
         .where(AnalysisRun.id == run_id)
         .options(
+            selectinload(AnalysisRun.submission).selectinload(ContentSubmission.brand),
             selectinload(AnalysisRun.version),
             selectinload(AnalysisRun.issues).selectinload(ComplianceIssue.guideline),
             selectinload(AnalysisRun.issues).selectinload(ComplianceIssue.approved_fact),
@@ -474,16 +549,39 @@ def get_analysis_run(db: Session, run_id: UUID) -> AnalysisRunSchema:
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Analysis run {run_id} not found."},
         )
+    if run.submission:
+        verify_submission_access(run.submission, current_user)
     return _to_run_schema(run)
 
 
-def request_review(db: Session, submission_id: UUID, requested_by: str, note: str | None = None) -> ContentSubmission:
-    sub = db.get(ContentSubmission, submission_id)
+def request_review(
+    db: Session,
+    submission_id: UUID,
+    requested_by: str | None = None,
+    note: str | None = None,
+    current_user: User | None = None,
+) -> ContentSubmission:
+    sub = db.scalar(
+        select(ContentSubmission)
+        .where(ContentSubmission.id == submission_id)
+        .options(selectinload(ContentSubmission.brand))
+    )
     if not sub:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
         )
+    verify_submission_access(sub, current_user)
+
+    if current_user is not None:
+        if current_user.role == UserRole.REVIEWER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Reviewers are not permitted to submit content for review.",
+            )
+        requested_by = current_user.display_name
+    elif not requested_by:
+        requested_by = "Demo Editor"
 
     if sub.status != SubmissionStatus.ANALYZED:
         raise HTTPException(
@@ -513,13 +611,15 @@ def record_review(
     db: Session,
     submission_id: UUID,
     decision: ReviewDecision,
-    reviewer_name: str,
-    comments: str | None,
+    reviewer_name: str | None = None,
+    comments: str | None = None,
+    current_user: User | None = None,
 ) -> ContentSubmission:
     stmt = (
         select(ContentSubmission)
         .where(ContentSubmission.id == submission_id)
         .options(
+            selectinload(ContentSubmission.brand),
             selectinload(ContentSubmission.versions).selectinload(ContentVersion.analysis_runs),
         )
     )
@@ -529,6 +629,17 @@ def record_review(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
         )
+    verify_submission_access(sub, current_user)
+
+    if current_user is not None:
+        if current_user.role == UserRole.EDITOR:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Content creators are not permitted to record review decisions. Reviewer or Admin role required.",
+            )
+        reviewer_name = current_user.display_name
+    elif not reviewer_name:
+        reviewer_name = "Demo Reviewer"
 
     if sub.status != SubmissionStatus.IN_REVIEW:
         raise HTTPException(
@@ -579,7 +690,23 @@ def record_review(
     return sub
 
 
-def get_audit_trail(db: Session, submission_id: UUID) -> list[AuditLogEntry]:
+def get_audit_trail(
+    db: Session,
+    submission_id: UUID,
+    current_user: User | None = None,
+) -> list[AuditLogEntry]:
+    sub = db.scalar(
+        select(ContentSubmission)
+        .where(ContentSubmission.id == submission_id)
+        .options(selectinload(ContentSubmission.brand))
+    )
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "not_found", "message": f"Submission {submission_id} not found."},
+        )
+    verify_submission_access(sub, current_user)
+
     stmt = (
         select(AuditLog)
         .where(AuditLog.submission_id == submission_id)

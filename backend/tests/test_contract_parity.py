@@ -22,6 +22,7 @@ ENUMS: list[type[StrEnum]] = [
     enums.AIStatus,
     enums.ReviewDecision,
     enums.SubmissionAction,
+    enums.UserRole,
 ]
 
 MODELS: list[type[BaseModel]] = [
@@ -46,6 +47,20 @@ MODELS: list[type[BaseModel]] = [
     schemas.ReviewRequestCreate,
     schemas.ReviewCreate,
     schemas.HealthResponse,
+    schemas.UserResponse,
+    schemas.AuthResponse,
+    schemas.UserRegisterRequest,
+    schemas.UserLoginRequest,
+    schemas.MemberCreateRequest,
+    schemas.BrandCreateRequest,
+    schemas.BrandUpdateRequest,
+    schemas.GuidelineCreateRequest,
+    schemas.FactCreateRequest,
+    schemas.TermCreateRequest,
+    schemas.BrandAssetCreateRequest,
+    schemas.BrandAssetResponse,
+    schemas.DocumentExtractionResponse,
+    schemas.DocumentExtractResponse,
 ]
 
 

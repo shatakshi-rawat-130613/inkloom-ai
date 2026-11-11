@@ -27,6 +27,8 @@ EXPECTED_TABLES = {
     "brand_guidelines",
     "approved_facts",
     "approved_terms",
+    "brand_assets",
+    "document_extractions",
     "content_submissions",
     "content_versions",
     "analysis_runs",
@@ -37,7 +39,10 @@ EXPECTED_TABLES = {
 
 
 def test_all_tables_created(engine):
-    assert set(inspect(engine).get_table_names()) == EXPECTED_TABLES
+    table_names = set(inspect(engine).get_table_names())
+    # May or may not include alembic_version depending on migration runner
+    table_names.discard("alembic_version")
+    assert table_names == EXPECTED_TABLES
 
 
 def test_seed_matches_brief_exactly(seeded_db):
@@ -62,7 +67,8 @@ def test_seed_matches_brief_exactly(seeded_db):
 def test_seed_is_idempotent(seeded_db):
     seed_demo_data(seeded_db)
     seed_demo_data(seeded_db)
-    for model, expected in [(BrandProfile, 1), (BrandGuideline, 3), (ApprovedFact, 2), (ApprovedTerm, 1), (User, 2)]:
+    from app.models import BrandAsset
+    for model, expected in [(BrandProfile, 1), (BrandGuideline, 3), (ApprovedFact, 2), (ApprovedTerm, 1), (User, 3), (BrandAsset, 3)]:
         assert seeded_db.scalar(select(func.count()).select_from(model)) == expected
 
 

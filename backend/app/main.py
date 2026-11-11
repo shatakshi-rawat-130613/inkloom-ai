@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.db import SessionLocal, init_db
-from app.routers import analysis, brands, health, submissions
+from app.routers import analysis, auth, brands, documents, health, submissions
 from app.schemas import ErrorBody, ErrorResponse
 from app.seed import seed_demo_data
 
@@ -114,6 +114,8 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 # Register routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(brands.router)
 app.include_router(submissions.router)
 app.include_router(analysis.router)
+app.include_router(documents.router)

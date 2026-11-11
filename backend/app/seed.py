@@ -9,11 +9,13 @@ Run manually:  python -m app.seed
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.security import hash_password
 from app.enums import FindingCategory, Severity, UserRole
-from app.models import ApprovedFact, ApprovedTerm, BrandGuideline, BrandProfile, Organisation, User
+from app.models import ApprovedFact, ApprovedTerm, BrandAsset, BrandGuideline, BrandProfile, Organisation, User
 
 DEMO_ORG_SLUG = "lumacare-demo"
 DEMO_BRAND_SLUG = "lumacare"
+DEMO_PASSWORD = "LumaCareDemo2026!"
 
 ORGANISATION = {"slug": DEMO_ORG_SLUG, "name": "LumaCare (fictional demo organisation)"}
 
@@ -68,7 +70,46 @@ TERMS = [
     },
 ]
 
+ASSETS = [
+    {
+        "asset_type": "logo",
+        "name": "LumaCare Primary Wordmark",
+        "asset_metadata": {
+            "text": "LumaCare",
+            "aspect_ratio": "3:1",
+            "min_width_px": 120,
+            "min_clearance_px": 24,
+            "acceptable_variants": ["LumaCare", "LUMACARE", "lumacare"],
+            "primary_color": "#1C1917",
+        },
+    },
+    {
+        "asset_type": "color_palette",
+        "name": "LumaCare Approved Color Palette",
+        "asset_metadata": {
+            "colors": [
+                {"name": "Ivory", "hex": "#FDFBF7", "role": "primary_background"},
+                {"name": "Parchment", "hex": "#F4EFE6", "role": "secondary_background"},
+                {"name": "Ink", "hex": "#1C1917", "role": "primary_text"},
+                {"name": "Sage", "hex": "#3B5E4F", "role": "accent_compliant"},
+                {"name": "Terracotta", "hex": "#9C4132", "role": "accent_warning"},
+            ],
+            "max_color_delta_e": 25.0,
+        },
+    },
+    {
+        "asset_type": "visual_guideline",
+        "name": "LumaCare Imagery & Composition Standards",
+        "asset_metadata": {
+            "min_contrast_ratio": 4.5,
+            "imagery_style": "Natural, realistic skincare lighting, no heavy artificial filters or distorted proportions.",
+            "unapproved_visual_elements": ["medical syringe imagery", "dramatic fake before-after splits"],
+        },
+    },
+]
+
 USERS = [
+    {"display_name": "Demo Brand Manager", "email": "admin@lumacare.demo", "role": UserRole.ADMIN},
     {"display_name": "Demo Editor", "email": "editor@lumacare.demo", "role": UserRole.EDITOR},
     {"display_name": "Demo Reviewer", "email": "reviewer@lumacare.demo", "role": UserRole.REVIEWER},
 ]
@@ -82,9 +123,14 @@ def seed_demo_data(db: Session) -> BrandProfile:
         db.add(org)
         db.flush()
 
+    default_pwd_hash = hash_password(DEMO_PASSWORD)
+
     for u in USERS:
-        if db.scalar(select(User).where(User.email == u["email"])) is None:
-            db.add(User(organisation_id=org.id, **u))
+        existing_user = db.scalar(select(User).where(User.email == u["email"]))
+        if existing_user is None:
+            db.add(User(organisation_id=org.id, password_hash=default_pwd_hash, **u))
+        elif existing_user.password_hash is None:
+            existing_user.password_hash = default_pwd_hash
 
     brand = db.scalar(select(BrandProfile).where(BrandProfile.slug == DEMO_BRAND_SLUG))
     if brand is None:
@@ -111,6 +157,14 @@ def seed_demo_data(db: Session) -> BrandProfile:
             data = dict(t)
             related = existing_guidelines.get(data.pop("related_guideline_code"))
             db.add(ApprovedTerm(brand_id=brand.id, related_guideline_id=related.id if related else None, **data))
+
+    existing_assets = {a.name for a in db.scalars(select(BrandAsset).where(BrandAsset.brand_id == brand.id))}
+    for a in ASSETS:
+        if a["name"] not in existing_assets:
+            db.add(BrandAsset(brand_id=brand.id, **a))
+
+    db.commit()
+    return brand
 
     db.commit()
     return brand

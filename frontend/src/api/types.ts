@@ -51,13 +51,15 @@ export type FindingCategory =
   | 'tone'
   | 'other'
 
-export type FindingSource = 'rule_engine' | 'ai'
+export type FindingSource = 'rule_engine' | 'ai' | 'document' | 'ocr' | 'visual'
 
 export type AIStatus = 'ok' | 'unavailable' | 'invalid_response' | 'disabled'
 
 export type ReviewDecision = 'approved' | 'rejected' | 'revisions_requested'
 
 export type SubmissionAction = 'edit' | 'analyze' | 'request_review' | 'review'
+
+export type UserRole = 'admin' | 'editor' | 'reviewer'
 
 // ---------------------------------------------------------------- errors
 
@@ -247,6 +249,117 @@ export interface HealthResponse {
   status: string
   database: string
   ai: AIStatus
+}
+
+export interface UserResponse {
+  id: UUID
+  organisation_id: UUID
+  organisation_name: string
+  display_name: string
+  email: string
+  role: UserRole
+  is_active: boolean
+  created_at: ISODateTime
+}
+
+export interface AuthResponse {
+  access_token: string
+  token_type: string
+  user: UserResponse
+}
+
+export interface UserRegisterRequest {
+  organisation_name: string
+  display_name: string
+  email: string
+  password: string
+}
+
+export interface UserLoginRequest {
+  email: string
+  password: string
+}
+
+export interface MemberCreateRequest {
+  display_name: string
+  email: string
+  password: string
+  role: UserRole
+}
+
+export interface BrandCreateRequest {
+  name: string
+  industry: string
+  description: string
+  voice_summary: string
+}
+
+export interface BrandUpdateRequest {
+  name?: string | null
+  industry?: string | null
+  description?: string | null
+  voice_summary?: string | null
+}
+
+export interface GuidelineCreateRequest {
+  code: string
+  title: string
+  rule_text: string
+  category: FindingCategory
+  default_severity: Severity
+}
+
+export interface FactCreateRequest {
+  code: string
+  statement: string
+  source?: string | null
+}
+
+export interface TermCreateRequest {
+  code: string
+  preferred_term?: string | null
+  prohibited_term?: string | null
+  notes?: string | null
+  related_guideline_code?: string | null
+}
+
+export interface BrandAssetCreateRequest {
+  asset_type: string
+  name: string
+  asset_metadata: Record<string, unknown>
+}
+
+export interface BrandAssetResponse {
+  id: UUID
+  brand_id: UUID
+  asset_type: string
+  name: string
+  asset_metadata: Record<string, unknown>
+  is_active: boolean
+  created_at: ISODateTime
+}
+
+export interface DocumentExtractionResponse {
+  id: UUID
+  submission_id: UUID | null
+  file_name: string
+  file_type: string
+  file_size_bytes: number
+  extraction_source: string
+  extracted_text: string
+  extraction_status: string
+  extraction_metadata: Record<string, unknown>
+  created_at: ISODateTime
+}
+
+export interface DocumentExtractResponse {
+  file_name: string
+  file_type: string
+  file_size_bytes: number
+  extraction_source: string
+  extracted_text: string
+  extraction_metadata: Record<string, unknown>
+  visual_findings: Record<string, unknown>[]
 }
 
 export const MAX_BODY_CHARS = 10_000

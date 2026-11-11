@@ -1,31 +1,49 @@
 /**
- * LumaCare Demo Brand Workspace page.
- * Displays approved guidelines, facts, terminology, and submission history.
+ * Brand Workspace page.
+ * Displays approved guidelines, facts, terminology, visual assets, and submission history
+ * with multi-brand workspace switching and role-based management.
  */
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import type { BrandDetail, SubmissionListItem } from '../api/types'
+import type { BrandAssetResponse, BrandDetail, SubmissionListItem } from '../api/types'
 import { Skeleton } from '../components/Skeleton'
 import { CategoryBadge, OverallBadge, SeverityBadge, SubmissionStatusBadge } from '../components/StatusBadge'
+import { useAuth } from '../context/AuthContext'
 import { DEMO_TEST_CASES } from '../data/demoTestCases'
 
 export function WorkspacePage() {
   const navigate = useNavigate()
+  const { activeBrand } = useAuth()
+
   const [brand, setBrand] = useState<BrandDetail | null>(null)
+  const [assets, setAssets] = useState<BrandAssetResponse[]>([])
   const [submissions, setSubmissions] = useState<SubmissionListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'guidelines' | 'facts' | 'terms'>('guidelines')
+  const [activeTab, setActiveTab] = useState<'guidelines' | 'facts' | 'terms' | 'assets'>('guidelines')
 
   useEffect(() => {
     let mounted = true
-    Promise.all([api.getBrand('lumacare'), api.listSubmissions()])
+    const targetSlugOrId = activeBrand ? activeBrand.id : 'lumacare'
+
+    Promise.all([
+      api.getBrand(targetSlugOrId),
+      api.listSubmissions(activeBrand?.id),
+    ])
       .then(([brandData, subsData]) => {
         if (mounted) {
           setBrand(brandData)
           setSubmissions(subsData)
+          // Also fetch visual assets for this brand
+          api.listBrandAssets(brandData.id)
+            .then((assetList) => {
+              if (mounted) setAssets(assetList)
+            })
+            .catch(() => {
+              if (mounted) setAssets([])
+            })
           setLoading(false)
         }
       })
@@ -35,10 +53,11 @@ export function WorkspacePage() {
           setLoading(false)
         }
       })
+
     return () => {
       mounted = false
     }
-  }, [])
+  }, [activeBrand])
 
   const handleLaunchTest = (testIndex: number) => {
     const test = DEMO_TEST_CASES[testIndex]
@@ -61,37 +80,44 @@ export function WorkspacePage() {
 
   if (error || !brand) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <h1 className="font-serif text-3xl text-terracotta">Workspace Unavailable</h1>
-        <p className="mt-4 text-ink-soft">{error || 'Could not connect to the backend service.'}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-6 px-4 py-2 bg-parchment text-ink text-sm font-medium rounded-sm border border-parchment-deep hover:bg-parchment-deep transition-colors"
-        >
-          Retry Connection
-        </button>
+      <div className="mx-auto max-w-6xl px-6 py-12">
+        <div className="p-6 bg-terracotta-soft/30 border border-terracotta/40 rounded-sm space-y-2">
+          <h2 className="font-serif text-lg font-bold text-terracotta">Unable to Load Workspace</h2>
+          <p className="text-sm text-ink-soft">{error || 'Brand workspace not found.'}</p>
+        </div>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10 space-y-12">
-      {/* Brand Hero & Voice Overview */}
-      <section className="bg-ivory border border-parchment-deep p-8 rounded-sm">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+      {/* Brand Hero & Workspace Overview */}
+      <section className="border-b border-parchment-deep pb-8">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-3 max-w-2xl">
-            <div className="flex items-center gap-3">
-              <h1 className="font-serif text-3xl font-bold text-ink">{brand.name}</h1>
-              <span className="text-xs uppercase tracking-wider text-sage font-medium px-2 py-0.5 bg-sage-soft rounded-sm border border-sage/20">
-                {brand.industry}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs uppercase tracking-widest text-sage font-medium">
+                Workspace
               </span>
-              <span className="text-xs text-ink-soft px-2 py-0.5 bg-parchment rounded-sm border border-parchment-deep">
-                Demo Workspace
-              </span>
+              <span className="text-xs text-ink-soft">/</span>
+              <span className="text-xs font-semibold text-ink-soft">{brand.industry}</span>
+              {brand.is_demo && (
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-soft bg-parchment px-2 py-0.5 rounded-sm border border-parchment-deep">
+                  Fictional Demo Brand
+                </span>
+              )}
             </div>
-            <p className="text-sm text-ink-soft leading-relaxed">{brand.description}</p>
-            <div className="pt-2 text-xs text-ink">
-              <span className="font-semibold text-sage uppercase tracking-wider mr-2">Brand Voice:</span>
+
+            <h1 className="font-serif text-4xl font-bold tracking-tight text-ink">
+              {brand.name}
+            </h1>
+
+            <p className="text-sm text-ink-soft leading-relaxed">
+              {brand.description}
+            </p>
+
+            <div className="pt-2 text-xs text-ink-soft flex items-center space-x-2">
+              <span className="font-semibold text-ink">Brand Voice:</span>
               <span className="italic">{brand.voice_summary}</span>
             </div>
           </div>
@@ -99,7 +125,7 @@ export function WorkspacePage() {
           <div className="flex flex-col sm:flex-row gap-3">
             <Link
               to="/submissions/new"
-              className="inline-flex items-center justify-center px-5 py-2.5 bg-ink text-ivory text-sm font-medium rounded-sm hover:bg-ink-soft transition-colors text-center"
+              className="inline-flex items-center justify-center px-5 py-2.5 bg-ink text-ivory text-sm font-medium rounded-sm hover:bg-sage transition-colors text-center"
             >
               Submit Content for Review
             </Link>
@@ -107,47 +133,49 @@ export function WorkspacePage() {
         </div>
       </section>
 
-      {/* Quick Judge Test Launcher */}
-      <section className="bg-parchment/50 border border-parchment-deep p-6 rounded-sm space-y-4">
-        <div>
-          <h2 className="font-serif text-lg font-semibold text-ink">
-            Interactive Test Scenarios for Evaluation
-          </h2>
-          <p className="text-xs text-ink-soft">
-            Select an official test case to pre-fill the submission editor and inspect real compliance results instantly.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {DEMO_TEST_CASES.map((tc, index) => (
-            <button
-              key={tc.id}
-              onClick={() => handleLaunchTest(index)}
-              className="text-left p-4 bg-ivory border border-parchment-deep hover:border-sage rounded-sm transition-colors space-y-2 group"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-ink group-hover:text-sage transition-colors">
-                  {tc.label}
-                </span>
-                <span className="text-xs text-sage font-medium">Load &rarr;</span>
-              </div>
-              <p className="text-xs text-ink-soft leading-normal">{tc.description}</p>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Approved Brand Knowledge (Guidelines, Facts, Terminology) */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-parchment-deep pb-3">
+      {/* Quick Judge Test Launcher (shown on demo brand) */}
+      {brand.is_demo && (
+        <section className="bg-parchment/50 border border-parchment-deep p-6 rounded-sm space-y-4">
           <div>
-            <h2 className="font-serif text-2xl font-bold text-ink">Approved Brand Knowledge</h2>
+            <h2 className="font-serif text-lg font-semibold text-ink">
+              Interactive Test Scenarios for Evaluation
+            </h2>
             <p className="text-xs text-ink-soft">
-              Deterministic standards and contextual facts against which content is verified.
+              Select an official test case to pre-fill the submission editor and inspect real compliance results instantly.
             </p>
           </div>
 
-          <div className="flex items-center space-x-1">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {DEMO_TEST_CASES.map((tc, index) => (
+              <button
+                key={tc.id}
+                onClick={() => handleLaunchTest(index)}
+                className="text-left p-4 bg-ivory border border-parchment-deep hover:border-sage rounded-sm transition-colors space-y-2 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-ink group-hover:text-sage transition-colors">
+                    {tc.label}
+                  </span>
+                  <span className="text-xs text-sage font-medium">Load &rarr;</span>
+                </div>
+                <p className="text-xs text-ink-soft leading-normal">{tc.description}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Approved Brand Knowledge (Guidelines, Facts, Terminology, Visual Assets) */}
+      <section className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-parchment-deep pb-3">
+          <div>
+            <h2 className="font-serif text-2xl font-bold text-ink">Approved Brand Standards</h2>
+            <p className="text-xs text-ink-soft">
+              Deterministic guidelines, approved facts, terminology rules, and visual asset palette.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
             <button
               onClick={() => setActiveTab('guidelines')}
               className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
@@ -166,7 +194,7 @@ export function WorkspacePage() {
                   : 'bg-parchment text-ink-soft hover:text-ink'
               }`}
             >
-              Approved Facts ({brand.facts.length})
+              Facts ({brand.facts.length})
             </button>
             <button
               onClick={() => setActiveTab('terms')}
@@ -177,6 +205,16 @@ export function WorkspacePage() {
               }`}
             >
               Terminology ({brand.terms.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('assets')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-sm transition-colors ${
+                activeTab === 'assets'
+                  ? 'bg-ink text-ivory'
+                  : 'bg-parchment text-ink-soft hover:text-ink'
+              }`}
+            >
+              Visual Assets ({assets.length})
             </button>
           </div>
         </div>
@@ -276,6 +314,85 @@ export function WorkspacePage() {
             ))}
           </div>
         )}
+
+        {activeTab === 'assets' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {assets.length === 0 ? (
+              <div className="col-span-2 text-center py-8 bg-ivory border border-parchment-deep rounded-sm">
+                <p className="text-xs text-ink-soft">No visual brand assets configured for this workspace.</p>
+              </div>
+            ) : (
+              assets.map((asset) => (
+                <div
+                  key={asset.id}
+                  className="bg-ivory border border-parchment-deep p-6 rounded-sm space-y-4"
+                >
+                  <div className="flex items-center justify-between border-b border-parchment-deep pb-2">
+                    <h3 className="font-serif text-base font-bold text-ink">{asset.name}</h3>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 bg-parchment rounded text-sage border border-parchment-deep">
+                      {asset.asset_type.replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  {asset.asset_type === 'color_palette' && (
+                    <div className="space-y-3">
+                      <div className="text-xs text-ink-soft">Approved Brand Color Palette:</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {((asset.asset_metadata.colors as Array<{ name: string; hex: string; role: string }>) || []).map(
+                          (c) => (
+                            <div
+                              key={c.hex}
+                              className="p-2 border border-parchment-deep rounded-sm flex items-center space-x-2"
+                            >
+                              <div
+                                className="w-6 h-6 rounded-xs border border-ink/20 shadow-inner shrink-0"
+                                style={{ backgroundColor: c.hex }}
+                              />
+                              <div className="overflow-hidden">
+                                <div className="text-xs font-bold text-ink truncate">{c.name}</div>
+                                <div className="text-[10px] font-mono text-ink-soft">{c.hex}</div>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {asset.asset_type === 'logo' && (
+                    <div className="space-y-2 text-xs text-ink-soft">
+                      <div>
+                        <span className="font-semibold text-ink">Wordmark Text:</span>{' '}
+                        {String(asset.asset_metadata.text || '')}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-ink">Aspect Ratio:</span>{' '}
+                        {String(asset.asset_metadata.aspect_ratio || '')}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-ink">Clearance Padding:</span>{' '}
+                        {String(asset.asset_metadata.min_clearance_px || 24)}px
+                      </div>
+                    </div>
+                  )}
+
+                  {asset.asset_type === 'visual_guideline' && (
+                    <div className="space-y-2 text-xs text-ink-soft">
+                      <div>
+                        <span className="font-semibold text-ink">Imagery Standard:</span>{' '}
+                        {String(asset.asset_metadata.imagery_style || '')}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-ink">Min Contrast:</span>{' '}
+                        {String(asset.asset_metadata.min_contrast_ratio || 4.5)}:1
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </section>
 
       {/* Submissions & Governance History */}
@@ -298,58 +415,52 @@ export function WorkspacePage() {
 
         {submissions.length === 0 ? (
           <div className="text-center py-12 bg-ivory border border-parchment-deep rounded-sm space-y-3">
-            <p className="font-serif text-lg text-ink">No submissions yet</p>
-            <p className="text-xs text-ink-soft max-w-sm mx-auto">
-              Get started by testing one of the demo scenarios above or submitting your own draft marketing content.
+            <p className="text-sm text-ink-soft font-serif">
+              No submissions recorded yet for this workspace.
             </p>
-            <button
-              onClick={() => handleLaunchTest(0)}
-              className="mt-2 px-4 py-2 bg-ink text-ivory text-xs font-medium rounded-sm hover:bg-ink-soft transition-colors"
+            <Link
+              to="/submissions/new"
+              className="inline-block px-4 py-2 bg-ink text-ivory text-xs font-semibold rounded-sm hover:bg-sage transition-colors"
             >
-              Run Non-Compliant Demo Test
-            </button>
+              Create First Submission
+            </Link>
           </div>
         ) : (
-          <div className="bg-ivory border border-parchment-deep rounded-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-parchment-deep bg-parchment/40 text-xs text-ink-soft font-semibold">
-                  <th className="py-3 px-4">Title</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Version</th>
-                  <th className="py-3 px-4">Workflow Status</th>
-                  <th className="py-3 px-4">Compliance Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-parchment-deep/60 text-xs">
-                {submissions.map((sub) => (
-                  <tr key={sub.id} className="hover:bg-parchment/20 transition-colors">
-                    <td className="py-3.5 px-4 font-serif text-sm font-semibold text-ink">
-                      <Link to={`/submissions/${sub.id}`} className="hover:text-sage transition-colors">
-                        {sub.title}
-                      </Link>
-                    </td>
-                    <td className="py-3.5 px-4 capitalize text-ink-soft">{sub.content_type.replace('_', ' ')}</td>
-                    <td className="py-3.5 px-4 font-mono font-medium text-ink-soft">v{sub.current_version_number}</td>
-                    <td className="py-3.5 px-4">
-                      <SubmissionStatusBadge status={sub.status} />
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <OverallBadge status={sub.latest_overall_status} />
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <Link
-                        to={`/submissions/${sub.id}`}
-                        className="inline-flex items-center px-2.5 py-1 text-xs font-medium text-ink bg-parchment border border-parchment-deep rounded-sm hover:bg-parchment-deep transition-colors"
-                      >
-                        Inspect &rarr;
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="bg-ivory border border-parchment-deep rounded-sm divide-y divide-parchment-deep overflow-hidden">
+            {submissions.map((sub) => (
+              <div
+                key={sub.id}
+                onClick={() => navigate(`/submissions/${sub.id}`)}
+                className="p-5 hover:bg-parchment/40 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center space-x-3">
+                    <h3 className="font-serif text-base font-semibold text-ink hover:text-sage transition-colors">
+                      {sub.title}
+                    </h3>
+                    <span className="text-xs font-mono text-ink-soft">
+                      v{sub.current_version_number}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-3 text-xs text-ink-soft">
+                    <span>{sub.author_name}</span>
+                    <span>&bull;</span>
+                    <span className="capitalize">{sub.content_type.replace('_', ' ')}</span>
+                    <span>&bull;</span>
+                    <span>{new Date(sub.updated_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3 shrink-0">
+                  {sub.latest_overall_status && (
+                    <OverallBadge status={sub.latest_overall_status} />
+                  )}
+                  <SubmissionStatusBadge status={sub.status} />
+                  <span className="text-xs text-ink-soft">&rarr;</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>

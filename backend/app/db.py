@@ -54,7 +54,31 @@ def get_db() -> Iterator[Session]:
 
 
 def init_db(bind: Engine | None = None) -> None:
-    """Create all tables (MVP strategy: create_all, no Alembic)."""
+    """Run versioned Alembic migrations to ensure schema is at head.
+    
+    If the database already contains tables but no alembic_version table,
+    it stamps revision 001_initial_schema before upgrading to head.
+    """
+    from pathlib import Path
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect
+
+    target_engine = bind or engine
+
     from app import models  # noqa: F401  (register models on Base.metadata)
 
-    Base.metadata.create_all(bind=bind or engine)
+    backend_dir = Path(__file__).resolve().parent.parent
+    ini_path = backend_dir / "alembic.ini"
+    alembic_cfg = Config(str(ini_path))
+    alembic_cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    alembic_cfg.set_main_option("sqlalchemy.url", str(target_engine.url))
+
+    inspector = inspect(target_engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with target_engine.begin() as connection:
+        alembic_cfg.attributes["connection"] = connection
+        if "organisations" in existing_tables and "alembic_version" not in existing_tables:
+            command.stamp(alembic_cfg, "001_initial_schema")
+        command.upgrade(alembic_cfg, "head")

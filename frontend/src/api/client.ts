@@ -1,22 +1,35 @@
 /**
  * Typed API client for Inkloom AI.
- * Handles base URL configuration, typed requests, and ErrorResponse unwrapping.
+ * Handles base URL configuration, Bearer auth headers, typed requests, and ErrorResponse unwrapping.
  */
 
 import type {
   AnalysisRun,
   AuditLogEntry,
+  AuthResponse,
+  BrandAssetCreateRequest,
+  BrandAssetResponse,
+  BrandCreateRequest,
   BrandDetail,
   BrandSummary,
+  BrandUpdateRequest,
+  DocumentExtractResponse,
   ErrorResponse,
+  FactCreateRequest,
+  GuidelineCreateRequest,
   HealthResponse,
+  MemberCreateRequest,
   ReviewCreate,
   ReviewRequestCreate,
   SubmissionCreate,
   SubmissionDetail,
   SubmissionListItem,
   SubmissionStatus,
+  TermCreateRequest,
   UUID,
+  UserLoginRequest,
+  UserRegisterRequest,
+  UserResponse,
   VersionCreate,
 } from './types'
 
@@ -40,6 +53,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   headers.set('Accept', 'application/json')
   if (options.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
+  }
+
+  // Attach JWT Bearer token from localStorage if available
+  const token = typeof window !== 'undefined' ? localStorage.getItem('inkloom_token') : null
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
   }
 
   const response = await fetch(url, { ...options, headers })
@@ -67,12 +86,109 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
+  // Health
   getHealth: () => request<HealthResponse>('/api/health'),
 
+  // Auth & Organisation
+  register: (payload: UserRegisterRequest) =>
+    request<AuthResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  login: (payload: UserLoginRequest) =>
+    request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  getMe: () => request<UserResponse>('/api/auth/me'),
+
+  listMembers: () => request<UserResponse[]>('/api/auth/members'),
+
+  createMember: (payload: MemberCreateRequest) =>
+    request<UserResponse>('/api/auth/members', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Brands
   listBrands: () => request<BrandSummary[]>('/api/brands'),
 
-  getBrand: (slug: string) => request<BrandDetail>(`/api/brands/${slug}`),
+  getBrand: (slugOrId: string) => request<BrandDetail>(`/api/brands/${slugOrId}`),
 
+  createBrand: (payload: BrandCreateRequest) =>
+    request<BrandDetail>('/api/brands', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  updateBrand: (brandId: UUID, payload: BrandUpdateRequest) =>
+    request<BrandDetail>(`/api/brands/${brandId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+
+  addGuideline: (brandId: UUID, payload: GuidelineCreateRequest) =>
+    request<BrandDetail>(`/api/brands/${brandId}/guidelines`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  addFact: (brandId: UUID, payload: FactCreateRequest) =>
+    request<BrandDetail>(`/api/brands/${brandId}/facts`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  addTerm: (brandId: UUID, payload: TermCreateRequest) =>
+    request<BrandDetail>(`/api/brands/${brandId}/terms`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  listBrandAssets: (brandId: UUID) =>
+    request<BrandAssetResponse[]>(`/api/brands/${brandId}/assets`),
+
+  createBrandAsset: (brandId: UUID, payload: BrandAssetCreateRequest) =>
+    request<BrandAssetResponse>(`/api/brands/${brandId}/assets`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Documents & Visual Ingestion
+  extractDocument: async (file: File, brandId?: UUID) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (brandId) formData.append('brand_id', brandId)
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('inkloom_token') : null
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+    }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+
+    const res = await fetch(`${API_BASE}/api/documents/extract`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!res.ok) {
+      let msg = `Document extraction failed with status ${res.status}`
+      try {
+        const errJson = await res.json()
+        if (errJson.detail) msg = errJson.detail
+      } catch {
+        // ignore
+      }
+      throw new Error(msg)
+    }
+
+    return (await res.json()) as DocumentExtractResponse
+  },
+
+  // Submissions
   createSubmission: (payload: SubmissionCreate) =>
     request<SubmissionDetail>('/api/submissions', {
       method: 'POST',

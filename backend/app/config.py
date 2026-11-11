@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,https://inkloom-ai-wheat.vercel.app"
 
+    jwt_secret_key: str = "inkloom-production-jwt-secret-key-do-not-share-32charsmin"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+
     max_content_chars: int = 10_000
     analyze_rate_limit_per_minute: int = 10
 

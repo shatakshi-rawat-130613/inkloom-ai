@@ -27,6 +27,7 @@ from app.enums import (
     Severity,
     SubmissionAction,
     SubmissionStatus,
+    UserRole,
 )
 
 # Hard upper bound enforced at the schema level. Settings.max_content_chars may
@@ -272,6 +273,107 @@ class HealthResponse(BaseModel):
     ai: AIStatus
 
 
+class UserResponse(_Out):
+    id: UUID
+    organisation_id: UUID
+    organisation_name: str
+    display_name: str
+    email: str
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+
+class AuthResponse(_Out):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class UserRegisterRequest(_Strict):
+    organisation_name: str = Field(min_length=2, max_length=120)
+    display_name: str = Field(min_length=2, max_length=100)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class UserLoginRequest(_Strict):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class MemberCreateRequest(_Strict):
+    display_name: str = Field(min_length=2, max_length=100)
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole
+
+
+class BrandCreateRequest(_Strict):
+    name: str = Field(min_length=2, max_length=100)
+    industry: str = Field(min_length=2, max_length=100)
+    description: str = Field(min_length=5, max_length=1000)
+    voice_summary: str = Field(min_length=5, max_length=1000)
+
+
+class BrandUpdateRequest(_Strict):
+    name: str | None = Field(default=None, min_length=2, max_length=100)
+    industry: str | None = Field(default=None, min_length=2, max_length=100)
+    description: str | None = Field(default=None, min_length=5, max_length=1000)
+    voice_summary: str | None = Field(default=None, min_length=5, max_length=1000)
+
+
+class GuidelineCreateRequest(_Strict):
+    code: str = Field(min_length=2, max_length=50)
+    title: str = Field(min_length=2, max_length=200)
+    rule_text: str = Field(min_length=5, max_length=1000)
+    category: FindingCategory
+    default_severity: Severity
+
+
+class FactCreateRequest(_Strict):
+    code: str = Field(min_length=2, max_length=50)
+    statement: str = Field(min_length=5, max_length=1000)
+    source: str | None = Field(default=None, max_length=500)
+
+
+class TermCreateRequest(_Strict):
+    code: str = Field(min_length=2, max_length=50)
+    preferred_term: str | None = Field(default=None, max_length=200)
+    prohibited_term: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
+    related_guideline_code: str | None = Field(default=None, max_length=50)
+
+
+class BrandAssetCreateRequest(_Strict):
+    asset_type: str = Field(min_length=2, max_length=50)
+    name: str = Field(min_length=2, max_length=200)
+    asset_metadata: dict[str, Any]
+
+
+class BrandAssetResponse(_Out):
+    id: UUID
+    brand_id: UUID
+    asset_type: str
+    name: str
+    asset_metadata: dict[str, Any]
+    is_active: bool
+    created_at: datetime
+
+
+class DocumentExtractionResponse(_Out):
+    id: UUID
+    submission_id: UUID | None
+    file_name: str
+    file_type: str
+    file_size_bytes: int
+    extraction_source: str
+    extracted_text: str
+    extraction_status: str
+    extraction_metadata: dict[str, Any]
+    created_at: datetime
+
+
 # ==========================================================================
 # AI contract (Gemini structured output) and internal finding draft
 # ==========================================================================
@@ -325,3 +427,13 @@ class FindingDraft(BaseModel):
     @classmethod
     def _upper(cls, value: str | None) -> str | None:
         return value.strip().upper() if value else None
+
+
+class DocumentExtractResponse(BaseModel):
+    file_name: str
+    file_type: str
+    file_size_bytes: int
+    extraction_source: str
+    extracted_text: str
+    extraction_metadata: dict[str, Any]
+    visual_findings: list[FindingDraft] = Field(default_factory=list)

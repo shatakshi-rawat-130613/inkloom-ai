@@ -65,6 +65,9 @@ class FindingCategory(StrEnum):
 class FindingSource(StrEnum):
     RULE_ENGINE = "rule_engine"
     AI = "ai"
+    DOCUMENT = "document"
+    OCR = "ocr"
+    VISUAL = "visual"
 
 
 class AIStatus(StrEnum):

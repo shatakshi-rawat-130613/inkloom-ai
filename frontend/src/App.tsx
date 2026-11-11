@@ -1,10 +1,11 @@
 /**
- * Inkloom AI main application component with client routing.
+ * Inkloom AI main application component with client routing and Auth provider.
  */
 
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import { Footer } from './components/Footer'
 import { Navbar } from './components/Navbar'
+import { AuthProvider } from './context/AuthContext'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { SubmissionDetailPage } from './pages/SubmissionDetailPage'
 import { SubmitPage } from './pages/SubmitPage'
@@ -22,7 +23,7 @@ function NotFoundPage() {
         to="/"
         className="inline-block mt-4 px-4 py-2 bg-parchment text-ink text-xs font-semibold rounded-sm border border-parchment-deep hover:bg-parchment-deep transition-colors"
       >
-        Return to Demo Brand
+        Return to Workspace
       </Link>
     </div>
   )
@@ -31,20 +32,22 @@ function NotFoundPage() {
 function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen flex flex-col bg-ivory text-ink selection:bg-sage-soft selection:text-ink">
-        <Navbar />
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<WorkspacePage />} />
-            <Route path="/submissions/new" element={<SubmitPage />} />
-            <Route path="/submissions/:id" element={<SubmissionDetailPage />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="/privacy" element={<PrivacyPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </main>
-        <Footer />
-      </div>
+      <AuthProvider>
+        <div className="min-h-screen flex flex-col bg-ivory text-ink selection:bg-sage-soft selection:text-ink">
+          <Navbar />
+          <main className="flex-1">
+            <Routes>
+              <Route path="/" element={<WorkspacePage />} />
+              <Route path="/submissions/new" element={<SubmitPage />} />
+              <Route path="/submissions/:id" element={<SubmissionDetailPage />} />
+              <Route path="/terms" element={<TermsPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </AuthProvider>
     </BrowserRouter>
   )
 }
