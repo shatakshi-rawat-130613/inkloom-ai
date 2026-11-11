@@ -173,7 +173,10 @@ def run_gemini_vision_ocr(
         mime_type = "image/webp"
 
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)),
+        )
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
         prompt = (
             "Extract all visible text, headlines, product claims, slogans, body copy, and fine print "
@@ -181,11 +184,22 @@ def run_gemini_vision_ocr(
             "Do not add commentary, pleasantries, or markdown fences. Return ONLY the exact extracted text."
         )
 
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=[part, prompt],
-        )
-        return response.text.strip() if response.text else ""
+        candidate_models = [settings.gemini_model]
+        if settings.gemini_model != "gemini-3.1-flash-lite":
+            candidate_models.append("gemini-3.1-flash-lite")
+
+        for model_id in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=[part, prompt],
+                )
+                if response.text and response.text.strip():
+                    return response.text.strip()
+            except Exception as e:
+                logger.warning("Gemini vision OCR model %s error: %s", model_id, sanitize_error(e))
+
+        return ""
     except Exception as exc:
         logger.warning("Gemini vision OCR error: %s", sanitize_error(exc))
         return ""
@@ -217,7 +231,10 @@ def run_gemini_logo_verification(
         mime_type = "image/webp"
 
     try:
-        client = genai.Client(api_key=settings.gemini_api_key)
+        client = genai.Client(
+            api_key=settings.gemini_api_key,
+            http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)),
+        )
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
         logo_text = logo_metadata.get("text", brand_name)
@@ -244,11 +261,24 @@ CONFIDENCE: <number between 0.0 and 1.0>
 EXPLANATION: <brief explanation without em dashes>
 """
 
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=[part, prompt],
-        )
-        if not response.text:
+        candidate_models = [settings.gemini_model]
+        if settings.gemini_model != "gemini-3.1-flash-lite":
+            candidate_models.append("gemini-3.1-flash-lite")
+
+        response = None
+        for model_id in candidate_models:
+            try:
+                resp = client.models.generate_content(
+                    model=model_id,
+                    contents=[part, prompt],
+                )
+                if resp.text:
+                    response = resp
+                    break
+            except Exception as e:
+                logger.warning("Gemini visual logo inspection model %s error: %s", model_id, sanitize_error(e))
+
+        if not response or not response.text:
             return "unable_to_determine", 0.5, "Empty response from visual inspection."
 
         status_match = re.search(r"STATUS:\s*([A-Z_]+)", response.text)

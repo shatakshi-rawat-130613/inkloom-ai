@@ -122,13 +122,17 @@ img_ocr_buf = io.BytesIO()
 img_ocr.save(img_ocr_buf, format="PNG")
 img_ocr_bytes = img_ocr_buf.getvalue()
 
-extract_img_res = requests.post(
-    f"{API_BASE}/documents/extract",
-    files={"file": ("promotional_banner.png", img_ocr_bytes, "image/png")},
-    data={"brand_id": lumacare_id},
-)
-assert extract_img_res.status_code == 200, f"Image extract failed: {extract_img_res.status_code} {extract_img_res.text}"
-img_data = extract_img_res.json()
+for attempt in range(3):
+    extract_img_res = requests.post(
+        f"{API_BASE}/documents/extract",
+        files={"file": ("promotional_banner.png", img_ocr_bytes, "image/png")},
+        data={"brand_id": lumacare_id},
+    )
+    assert extract_img_res.status_code == 200, f"Image extract failed: {extract_img_res.status_code} {extract_img_res.text}"
+    img_data = extract_img_res.json()
+    if img_data["extraction_source"] == "ocr" or img_data["extraction_metadata"].get("has_ocr_text"):
+        break
+    time.sleep(3)
 
 print(f"Extracted Source: {img_data['extraction_source']}")
 print(f"Extracted Text: {img_data['extracted_text']}")
@@ -139,6 +143,7 @@ assert img_data["extraction_source"] == "ocr" or img_data["extraction_metadata"]
 assert "lumacare" in img_data["extracted_text"].lower() or "hydration" in img_data["extracted_text"].lower() or "soothing" in img_data["extracted_text"].lower(), \
     f"OCR text does not match image content: {img_data['extracted_text']}"
 print("[PASS] Part 1: Live Promotional Image OCR extracted visible text and tagged source correctly")
+time.sleep(2)
 
 # ------------------------------------------------------------------
 # PART 2: LIVE SCANNED PDF OCR
