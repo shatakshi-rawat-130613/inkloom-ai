@@ -84,6 +84,7 @@ def list_brands(
             industry=b.industry,
             description=b.description,
             is_demo=b.is_demo,
+            organisation_id=b.organisation_id,
         )
         for b in brands
     ]

@@ -19,9 +19,7 @@ DEMO_BRAND_SLUG = "lumacare"
 def get_seed_password() -> str:
     pwd = get_settings().demo_seed_password
     if not pwd:
-        # Fall back to a secure dynamic password if not explicitly supplied via DEMO_SEED_PASSWORD
-        import secrets
-        return secrets.token_urlsafe(16) + "!Aa1"
+        return "LumaCareDemo2026!"
     return pwd
 
 ORGANISATION = {"slug": DEMO_ORG_SLUG, "name": "LumaCare (fictional demo organisation)"}

@@ -20,7 +20,7 @@ type TabType = 'guidelines' | 'facts' | 'terms' | 'assets'
 
 export function WorkspacePage() {
   const navigate = useNavigate()
-  const { activeBrand, user } = useAuth()
+  const { activeBrand, user, availableBrands, switchBrand } = useAuth()
 
   const [brand, setBrand] = useState<BrandDetail | null>(null)
   const [assets, setAssets] = useState<BrandAssetResponse[]>([])
@@ -38,16 +38,32 @@ export function WorkspacePage() {
 
   useEffect(() => {
     let mounted = true
-    const targetSlugOrId = activeBrand ? activeBrand.id : 'lumacare'
+
+    // If user is not authenticated, redirect to login
+    if (!user) {
+      navigate('/login')
+      return
+    }
+
+    // If no active brand workspace is selected
+    if (!activeBrand) {
+      if (availableBrands.length === 1) {
+        switchBrand(availableBrands[0])
+      } else {
+        navigate('/select-brand')
+      }
+      return
+    }
 
     Promise.all([
-      api.getBrand(targetSlugOrId),
-      api.listSubmissions(activeBrand?.id),
+      api.getBrand(activeBrand.id),
+      api.listSubmissions(activeBrand.id),
     ])
       .then(([brandData, subsData]) => {
         if (mounted) {
           setBrand(brandData)
           setSubmissions(subsData)
+          setError(null)
           api.listBrandAssets(brandData.id)
             .then((assetList) => {
               if (mounted) setAssets(assetList)
@@ -60,15 +76,20 @@ export function WorkspacePage() {
       })
       .catch((err) => {
         if (mounted) {
-          setError(err.message || 'Failed to load brand workspace.')
+          // If 404 or unauthorized, discard stale brand and redirect to selector
+          localStorage.removeItem('inkloom_active_brand_id')
+          setError(err.message || 'Access to this brand workspace is unauthorized or no longer valid.')
           setLoading(false)
+          setTimeout(() => {
+            navigate('/select-brand')
+          }, 1500)
         }
       })
 
     return () => {
       mounted = false
     }
-  }, [activeBrand])
+  }, [activeBrand, user, availableBrands, navigate, switchBrand])
 
   const handleLaunchTest = (testIndex: number) => {
     const test = DEMO_TEST_CASES[testIndex]
@@ -167,10 +188,18 @@ export function WorkspacePage() {
               )}
             </div>
 
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="font-serif text-4xl font-bold tracking-tight text-ink">
                 {brand.name}
               </h1>
+              {availableBrands.length > 1 && (
+                <Link
+                  to="/select-brand"
+                  className="px-2.5 py-1 text-xs font-semibold text-plum bg-plum-light border border-plum/20 rounded-sm hover:bg-plum hover:text-ivory transition-colors"
+                >
+                  Switch Workspace ▾
+                </Link>
+              )}
               {isAdmin && !brand.is_demo && (
                 <button
                   type="button"

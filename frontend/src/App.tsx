@@ -6,7 +6,10 @@ import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import { Footer } from './components/Footer'
 import { Navbar } from './components/Navbar'
 import { AuthProvider } from './context/AuthContext'
+import { LandingPage } from './pages/LandingPage'
+import { LoginPage } from './pages/LoginPage'
 import { PrivacyPage } from './pages/PrivacyPage'
+import { SelectBrandPage } from './pages/SelectBrandPage'
 import { SubmissionDetailPage } from './pages/SubmissionDetailPage'
 import { SubmitPage } from './pages/SubmitPage'
 import { TermsPage } from './pages/TermsPage'
@@ -23,7 +26,7 @@ function NotFoundPage() {
         to="/"
         className="inline-block mt-4 px-4 py-2 bg-parchment text-ink text-xs font-semibold rounded-sm border border-parchment-deep hover:bg-parchment-deep transition-colors"
       >
-        Return to Workspace
+        Return to Home
       </Link>
     </div>
   )
@@ -37,7 +40,10 @@ function App() {
           <Navbar />
           <main className="flex-1">
             <Routes>
-              <Route path="/" element={<WorkspacePage />} />
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/select-brand" element={<SelectBrandPage />} />
+              <Route path="/workspace" element={<WorkspacePage />} />
               <Route path="/submissions/new" element={<SubmitPage />} />
               <Route path="/submissions/:id" element={<SubmissionDetailPage />} />
               <Route path="/terms" element={<TermsPage />} />

@@ -4,7 +4,7 @@
  * Integrated with Role-Based Access Control and active brand workspace.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ContentType } from '../api/types'
@@ -15,14 +15,30 @@ export function SubmitPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const initialData = location.state as DemoTestCase | undefined
-  const { user, activeBrand } = useAuth()
+  const { user, activeBrand, availableBrands, switchBrand } = useAuth()
 
-  const [title, setTitle] = useState(initialData?.title || 'LumaCare Social Announcement')
+  const [title, setTitle] = useState(
+    initialData?.title || (activeBrand ? `${activeBrand.name} Announcement` : 'Brand Announcement')
+  )
   const [contentType, setContentType] = useState<ContentType>(initialData?.type || 'social_post')
-  const [authorName] = useState(user?.display_name || 'Demo Editor')
+  const [authorName] = useState(user?.display_name || 'Content Creator')
   const [body, setBody] = useState(initialData?.content || '')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login')
+      return
+    }
+    if (!activeBrand) {
+      if (availableBrands.length === 1) {
+        switchBrand(availableBrands[0])
+      } else {
+        navigate('/select-brand')
+      }
+    }
+  }, [user, activeBrand, availableBrands, navigate, switchBrand])
 
   // Document & Visual Upload state
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -104,27 +120,28 @@ export function SubmitPage() {
       return
     }
 
+    if (!activeBrand) {
+      setError('Please select an active brand workspace before creating a submission.')
+      return
+    }
+
     setIsSubmitting(true)
     setError(null)
 
     try {
-      // 1. Fetch brand to get its ID
-      const brandSlugOrId = activeBrand ? activeBrand.id : 'lumacare'
-      const brand = await api.getBrand(brandSlugOrId)
-
-      // 2. Create submission (creates version 1)
+      // 1. Create submission for active brand workspace
       const submission = await api.createSubmission({
-        brand_id: brand.id,
+        brand_id: activeBrand.id,
         title: title.trim(),
         content_type: contentType,
         body: body.trim(),
-        author_name: user?.display_name || authorName.trim() || 'Demo Editor',
+        author_name: user?.display_name || authorName.trim() || 'Content Creator',
       })
 
-      // 3. Immediately trigger analysis
+      // 2. Immediately trigger analysis
       await api.analyzeSubmission(submission.id)
 
-      // 4. Redirect to submission inspection detail
+      // 3. Redirect to submission inspection detail
       navigate(`/submissions/${submission.id}`)
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to submit and analyse content.'

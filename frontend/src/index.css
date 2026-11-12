@@ -8,17 +8,29 @@
  */
 @theme {
   --color-*: initial;
-  --color-ivory: #f4efe5;
-  --color-parchment: #e4d8c6;
-  --color-parchment-deep: #d6c7b0;
-  --color-ink: #302b26;
-  --color-ink-soft: #5b534b;
-  --color-sage: #53675c;
-  --color-sage-soft: #dfe4dc;
-  --color-terracotta: #a65f48;
-  --color-terracotta-soft: #f0ddd3;
-  --color-ochre: #9a7a3a;
-  --color-ochre-soft: #efe4cc;
+  --color-ivory: #FDFBF7;
+  --color-parchment: #F4EFE6;
+  --color-parchment-deep: #E7DEC9;
+  --color-sand: #D8C9B2;
+  --color-sand-soft: #EDE4D6;
+  --color-plum: #302638;
+  --color-plum-soft: #44374E;
+  --color-plum-light: #F4F0F7;
+  --color-sage: #53675C;
+  --color-sage-muted: #A9B6A0;
+  --color-sage-soft: #DFE4DC;
+  --color-sage-light: #F1F4EF;
+  --color-terracotta: #C98272;
+  --color-terracotta-dark: #A65F48;
+  --color-terracotta-soft: #F0DDD3;
+  --color-rose: #E7D6CF;
+  --color-rose-soft: #F6EDE8;
+  --color-ink: #1C1917;
+  --color-ink-soft: #5B534B;
+  --color-ink-muted: #8C827A;
+  --color-ochre: #9A7A3A;
+  --color-ochre-soft: #EFE4CC;
+  --color-white: #FFFFFF;
   --color-transparent: transparent;
   --color-current: currentColor;
 

@@ -104,6 +104,7 @@ export interface BrandSummary {
   industry: string
   description: string
   is_demo: boolean
+  organisation_id: UUID | null
 }
 
 export interface BrandDetail extends BrandSummary {
@@ -266,6 +267,13 @@ export interface AuthResponse {
   access_token: string
   token_type: string
   user: UserResponse
+}
+
+export interface OrganisationLookupResponse {
+  exists: boolean
+  name: string | null
+  slug: string | null
+  message: string | null
 }
 
 export interface UserRegisterRequest {

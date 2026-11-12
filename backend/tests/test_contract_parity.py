@@ -49,6 +49,7 @@ MODELS: list[type[BaseModel]] = [
     schemas.HealthResponse,
     schemas.UserResponse,
     schemas.AuthResponse,
+    schemas.OrganisationLookupResponse,
     schemas.UserRegisterRequest,
     schemas.UserLoginRequest,
     schemas.MemberCreateRequest,

@@ -292,3 +292,45 @@ def test_rbac_content_creator_cannot_review_and_reviewer_cannot_submit(client):
     )
     assert rev_review_res.status_code == 201
     assert rev_review_res.json()["status"] == "approved"
+
+
+def test_organisation_lookup_endpoint(client):
+    # Register an organisation
+    res = client.post(
+        "/api/auth/register",
+        json={
+            "organisation_name": "Solaris Brand Studio",
+            "display_name": "Sarah Solaris",
+            "email": "sarah@solaris.internal",
+            "password": "Password123!",
+        },
+    )
+    assert res.status_code == 201
+
+    # Lookup by exact slug/code
+    lookup1 = client.get("/api/auth/organisations/lookup?code=solaris-brand-studio")
+    assert lookup1.status_code == 200
+    d1 = lookup1.json()
+    assert d1["exists"] is True
+    assert d1["name"] == "Solaris Brand Studio"
+    assert d1["slug"] == "solaris-brand-studio"
+
+    # Lookup by name prefix
+    lookup2 = client.get("/api/auth/organisations/lookup?query=Solaris")
+    assert lookup2.status_code == 200
+    d2 = lookup2.json()
+    assert d2["exists"] is True
+    assert d2["name"] == "Solaris Brand Studio"
+
+    # Non-existent organization
+    lookup3 = client.get("/api/auth/organisations/lookup?query=NonExistentCorpXYZ")
+    assert lookup3.status_code == 200
+    d3 = lookup3.json()
+    assert d3["exists"] is False
+    assert d3["name"] is None
+
+    # Too short term
+    lookup4 = client.get("/api/auth/organisations/lookup?query=a")
+    assert lookup4.status_code == 200
+    d4 = lookup4.json()
+    assert d4["exists"] is False

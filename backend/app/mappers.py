@@ -45,6 +45,7 @@ def brand_to_detail(brand: BrandProfile) -> BrandDetail:
         industry=brand.industry,
         description=brand.description,
         is_demo=brand.is_demo,
+        organisation_id=brand.organisation_id,
         voice_summary=brand.voice_summary,
         guidelines=_guidelines(brand),
         facts=_facts(brand),

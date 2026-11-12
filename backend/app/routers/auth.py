@@ -5,7 +5,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_admin
@@ -13,7 +13,14 @@ from app.auth.security import create_access_token, hash_password, verify_passwor
 from app.db import get_db
 from app.enums import UserRole
 from app.models import Organisation, User
-from app.schemas import AuthResponse, MemberCreateRequest, UserLoginRequest, UserRegisterRequest, UserResponse
+from app.schemas import (
+    AuthResponse,
+    MemberCreateRequest,
+    OrganisationLookupResponse,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -34,6 +41,50 @@ def _user_to_response(user: User, org_name: str | None = None) -> UserResponse:
 def _slugify(name: str) -> str:
     cleaned = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return cleaned[:50] or "org"
+
+
+@router.get("/organisations/lookup", response_model=OrganisationLookupResponse)
+def lookup_organisation(
+    query: str | None = None,
+    code: str | None = None,
+    db: Session = Depends(get_db),
+) -> OrganisationLookupResponse:
+    """Securely look up an organisation by workspace code or name without exposing tenant members."""
+    term = (code or query or "").strip().lower()
+    if len(term) < 2:
+        return OrganisationLookupResponse(
+            exists=False,
+            name=None,
+            slug=None,
+            message="Please provide at least 2 characters to look up your organisation.",
+        )
+
+    # Search exact slug match or name match or prefix match
+    org = db.scalar(
+        select(Organisation).where(
+            or_(
+                Organisation.slug == term,
+                Organisation.name.ilike(term),
+                Organisation.slug.ilike(f"{term}%"),
+                Organisation.name.ilike(f"{term}%"),
+            )
+        )
+    )
+
+    if org is None:
+        return OrganisationLookupResponse(
+            exists=False,
+            name=None,
+            slug=None,
+            message="No active organisation found matching this workspace code or name.",
+        )
+
+    return OrganisationLookupResponse(
+        exists=True,
+        name=org.name,
+        slug=org.slug,
+        message=f"Organisation verified: {org.name} ({org.slug})",
+    )
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)

@@ -19,6 +19,7 @@ import type {
   GuidelineCreateRequest,
   HealthResponse,
   MemberCreateRequest,
+  OrganisationLookupResponse,
   ReviewCreate,
   ReviewRequestCreate,
   SubmissionCreate,
@@ -101,6 +102,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+
+  lookupOrganisation: (queryOrCode: string) =>
+    request<OrganisationLookupResponse>(
+      `/api/auth/organisations/lookup?query=${encodeURIComponent(queryOrCode)}`
+    ),
 
   getMe: () => request<UserResponse>('/api/auth/me'),
 

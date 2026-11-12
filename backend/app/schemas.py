@@ -92,6 +92,7 @@ class BrandSummary(_Out):
     industry: str
     description: str
     is_demo: bool
+    organisation_id: UUID | None = None
 
 
 class BrandDetail(BrandSummary):
@@ -288,6 +289,13 @@ class AuthResponse(_Out):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+
+
+class OrganisationLookupResponse(_Out):
+    exists: bool
+    name: str | None = None
+    slug: str | None = None
+    message: str | None = None
 
 
 class UserRegisterRequest(_Strict):
