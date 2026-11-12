@@ -51,6 +51,16 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  /* Sticky navbar offset for in-page anchors (64px navbar + 16px breathing buffer) */
+  #home,
+  #platform,
+  #solutions,
+  #how-it-works,
+  #about {
+    scroll-margin-top: 5rem;
   }
 
   h1,

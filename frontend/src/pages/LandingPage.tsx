@@ -9,12 +9,45 @@
  * - Enterprise Call to Action and grounded governance principles.
  */
 
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function LandingPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const { user, activeBrand, demoLogin } = useAuth()
+
+  // Route-aware smooth scrolling for hash anchors & home
+  useEffect(() => {
+    if (location.hash) {
+      const id = location.hash.replace('#', '')
+      const scrollToTarget = () => {
+        const el = document.getElementById(id)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' })
+          return true
+        }
+        return false
+      }
+
+      // Attempt scroll after paint and with fallback for font/image layout settling
+      const raf = requestAnimationFrame(() => {
+        if (!scrollToTarget()) {
+          const t1 = setTimeout(scrollToTarget, 50)
+          return () => clearTimeout(t1)
+        }
+      })
+      const t2 = setTimeout(scrollToTarget, 150)
+
+      return () => {
+        cancelAnimationFrame(raf)
+        clearTimeout(t2)
+      }
+    } else if (location.pathname === '/') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [location.pathname, location.hash])
 
   const handleDemoLaunch = async (role: 'admin' | 'creator' | 'reviewer') => {
     try {
@@ -32,7 +65,7 @@ export function LandingPage() {
   return (
     <div className="bg-ivory text-ink">
       {/* SECTION 1: HERO (Warm Parchment & Sand Split Hero) */}
-      <section id="home" className="relative pt-12 pb-20 sm:pt-20 sm:pb-28 overflow-hidden bg-parchment/60 border-b border-parchment-deep">
+      <section id="home" className="scroll-mt-20 relative pt-12 pb-20 sm:pt-20 sm:pb-28 overflow-hidden bg-parchment/60 border-b border-parchment-deep">
         <div className="mx-auto max-w-6xl px-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
             {/* Left Hero Column */}
@@ -176,7 +209,7 @@ export function LandingPage() {
       </section>
 
       {/* SECTION 2: THE THREE ROUND 3 MASTER CAPABILITIES (Deep Plum Contrasting Dark Section) */}
-      <section id="platform" className="py-20 sm:py-28 bg-plum text-ivory border-b border-plum-soft">
+      <section id="platform" className="scroll-mt-20 py-20 sm:py-28 bg-plum text-ivory border-b border-plum-soft">
         <div className="mx-auto max-w-6xl px-6 space-y-14">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <div className="text-xs uppercase tracking-widest text-terracotta font-semibold">
@@ -285,7 +318,7 @@ export function LandingPage() {
       </section>
 
       {/* SECTION 3: AUDIENCE-ORIENTED SOLUTIONS (Sage & Dusty Rose Sections) */}
-      <section id="solutions" className="py-20 sm:py-28 bg-ivory border-b border-parchment-deep">
+      <section id="solutions" className="scroll-mt-20 py-20 sm:py-28 bg-ivory border-b border-parchment-deep">
         <div className="mx-auto max-w-6xl px-6 space-y-16">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <div className="text-xs uppercase tracking-widest text-sage font-semibold">
@@ -386,7 +419,7 @@ export function LandingPage() {
       </section>
 
       {/* SECTION 4: HOW IT WORKS (Parchment & Sand Editorial Steps) */}
-      <section id="how-it-works" className="py-20 sm:py-28 bg-parchment/40 border-b border-parchment-deep">
+      <section id="how-it-works" className="scroll-mt-20 py-20 sm:py-28 bg-parchment/40 border-b border-parchment-deep">
         <div className="mx-auto max-w-6xl px-6 space-y-16">
           <div className="text-center max-w-2xl mx-auto space-y-3">
             <div className="text-xs uppercase tracking-widest text-plum font-semibold">
@@ -475,7 +508,7 @@ export function LandingPage() {
       </section>
 
       {/* SECTION 6: ABOUT & STANDARDS */}
-      <section id="about" className="py-16 bg-ivory border-t border-parchment-deep text-xs text-ink-soft">
+      <section id="about" className="scroll-mt-20 py-16 bg-ivory border-t border-parchment-deep text-xs text-ink-soft">
         <div className="mx-auto max-w-6xl px-6 space-y-4 text-center">
           <h4 className="font-serif text-sm font-bold text-ink uppercase tracking-wider">
             About Inkloom AI

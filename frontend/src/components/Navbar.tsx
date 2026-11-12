@@ -21,10 +21,45 @@ export function Navbar() {
   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false)
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false)
   const [isDemoMenuOpen, setIsDemoMenuOpen] = useState(false)
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
 
   const { user, logout, activeBrand, availableBrands, switchBrand, demoLogin } = useAuth()
 
-  const isPublicPage = location.pathname === '/' || location.pathname === '/login' || location.pathname === '/terms' || location.pathname === '/privacy'
+  const isPublicPage =
+    location.pathname === '/' ||
+    location.pathname === '/login' ||
+    location.pathname === '/select-brand' ||
+    location.pathname === '/terms' ||
+    location.pathname === '/privacy'
+
+  // Route-aware navigation handler for hash sections and home
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, targetHash: string) => {
+    e.preventDefault()
+    setIsMobileNavOpen(false)
+
+    if (location.pathname === '/') {
+      if (!targetHash || targetHash === '#home') {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        if (location.hash) {
+          navigate('/', { replace: false })
+        }
+      } else {
+        const id = targetHash.replace('#', '')
+        const el = document.getElementById(id)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' })
+          navigate(`/${targetHash}`, { replace: false })
+        }
+      }
+    } else {
+      // Coming from another route (/login, /select-brand, etc.)
+      if (!targetHash || targetHash === '#home') {
+        navigate('/')
+      } else {
+        navigate(`/${targetHash}`)
+      }
+    }
+  }
 
   useEffect(() => {
     let mounted = true
@@ -75,7 +110,11 @@ export function Navbar() {
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
           {/* Left: Brand Identity & Active Workspace Context */}
           <div className="flex items-center space-x-3 sm:space-x-4">
-            <Link to="/" className="flex items-baseline space-x-2 group">
+            <Link
+              to="/"
+              onClick={(e) => handleNavClick(e, '')}
+              className="flex items-baseline space-x-2 group"
+            >
               <span className="font-serif text-2xl font-bold tracking-tight text-ink group-hover:text-plum transition-colors">
                 Inkloom AI
               </span>
@@ -139,14 +178,44 @@ export function Navbar() {
 
           {/* Right Navigation & Controls */}
           <div className="flex items-center space-x-3 sm:space-x-5">
-            {/* If on Public Landing Page without active workspace session */}
-            {isPublicPage && !user ? (
+            {/* Public Landing & Marketing Navigation Links */}
+            {isPublicPage ? (
               <nav className="hidden md:flex items-center space-x-5 text-xs font-medium text-ink-soft">
-                <a href="#home" className="hover:text-plum transition-colors">Home</a>
-                <a href="#platform" className="hover:text-plum transition-colors">Platform</a>
-                <a href="#solutions" className="hover:text-plum transition-colors">Solutions</a>
-                <a href="#how-it-works" className="hover:text-plum transition-colors">How It Works</a>
-                <a href="#about" className="hover:text-plum transition-colors">About</a>
+                <Link
+                  to="/"
+                  onClick={(e) => handleNavClick(e, '')}
+                  className="hover:text-plum transition-colors"
+                >
+                  Home
+                </Link>
+                <Link
+                  to="/#platform"
+                  onClick={(e) => handleNavClick(e, '#platform')}
+                  className="hover:text-plum transition-colors"
+                >
+                  Platform
+                </Link>
+                <Link
+                  to="/#solutions"
+                  onClick={(e) => handleNavClick(e, '#solutions')}
+                  className="hover:text-plum transition-colors"
+                >
+                  Solutions
+                </Link>
+                <Link
+                  to="/#how-it-works"
+                  onClick={(e) => handleNavClick(e, '#how-it-works')}
+                  className="hover:text-plum transition-colors"
+                >
+                  How It Works
+                </Link>
+                <Link
+                  to="/#about"
+                  onClick={(e) => handleNavClick(e, '#about')}
+                  className="hover:text-plum transition-colors"
+                >
+                  About
+                </Link>
               </nav>
             ) : (
               /* In-App Workspace Navigation Links */
@@ -178,7 +247,16 @@ export function Navbar() {
             <div className="flex items-center pl-2 sm:pl-3 border-l border-parchment-deep space-x-2">
               {user ? (
                 <div className="flex items-center space-x-2">
-                  {isAdmin && (
+                  {isPublicPage && (
+                    <Link
+                      to="/workspace"
+                      className="hidden sm:inline-flex px-2.5 py-1 text-xs font-semibold text-ink bg-parchment border border-parchment-deep rounded-sm hover:border-plum transition-colors"
+                    >
+                      Workspace →
+                    </Link>
+                  )}
+
+                  {isAdmin && !isPublicPage && (
                     <button
                       type="button"
                       onClick={() => setIsTeamModalOpen(true)}
@@ -258,6 +336,23 @@ export function Navbar() {
                   </Link>
                 </div>
               )}
+
+              {/* Mobile menu toggle for public navigation */}
+              {isPublicPage && (
+                <button
+                  type="button"
+                  onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+                  className="md:hidden p-1.5 text-ink-soft hover:text-plum focus:outline-none ml-1"
+                  aria-label="Toggle navigation menu"
+                  aria-expanded={isMobileNavOpen}
+                >
+                  {isMobileNavOpen ? (
+                    <span className="text-base font-bold leading-none">✕</span>
+                  ) : (
+                    <span className="text-base font-bold leading-none">☰</span>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* System Online / Health Status */}
@@ -279,6 +374,68 @@ export function Navbar() {
             </div>
           </div>
         </div>
+
+        {/* Mobile Navigation Drawer */}
+        {isMobileNavOpen && isPublicPage && (
+          <div className="md:hidden border-t border-parchment-deep bg-ivory/98 px-6 py-4 space-y-3 text-xs font-medium shadow-md">
+            <Link
+              to="/"
+              onClick={(e) => handleNavClick(e, '')}
+              className="block py-1.5 text-ink hover:text-plum transition-colors"
+            >
+              Home
+            </Link>
+            <Link
+              to="/#platform"
+              onClick={(e) => handleNavClick(e, '#platform')}
+              className="block py-1.5 text-ink hover:text-plum transition-colors"
+            >
+              Platform
+            </Link>
+            <Link
+              to="/#solutions"
+              onClick={(e) => handleNavClick(e, '#solutions')}
+              className="block py-1.5 text-ink hover:text-plum transition-colors"
+            >
+              Solutions
+            </Link>
+            <Link
+              to="/#how-it-works"
+              onClick={(e) => handleNavClick(e, '#how-it-works')}
+              className="block py-1.5 text-ink hover:text-plum transition-colors"
+            >
+              How It Works
+            </Link>
+            <Link
+              to="/#about"
+              onClick={(e) => handleNavClick(e, '#about')}
+              className="block py-1.5 text-ink hover:text-plum transition-colors"
+            >
+              About
+            </Link>
+            {!user && (
+              <div className="pt-3 border-t border-parchment-deep flex items-center space-x-3">
+                <Link
+                  to="/login"
+                  onClick={() => setIsMobileNavOpen(false)}
+                  className="px-3.5 py-1.5 bg-terracotta text-ivory text-xs font-semibold rounded-sm hover:bg-terracotta-dark transition-colors shadow-sm"
+                >
+                  Login
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileNavOpen(false)
+                    handleDemoLaunch('reviewer')
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-plum bg-plum-light border border-plum/20 rounded-sm hover:bg-plum hover:text-ivory transition-colors"
+                >
+                  Try Demo
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       <BrandModal isOpen={isBrandModalOpen} onClose={() => setIsBrandModalOpen(false)} />
