@@ -5,6 +5,7 @@
 import { BrowserRouter, Link, Route, Routes } from 'react-router-dom'
 import { Footer } from './components/Footer'
 import { Navbar } from './components/Navbar'
+import { ProtectedRoute } from './components/ProtectedRoute'
 import { AuthProvider } from './context/AuthContext'
 import { LandingPage } from './pages/LandingPage'
 import { LoginPage } from './pages/LoginPage'
@@ -40,14 +41,46 @@ function App() {
           <Navbar />
           <main className="flex-1">
             <Routes>
+              {/* Public Routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/select-brand" element={<SelectBrandPage />} />
-              <Route path="/workspace" element={<WorkspacePage />} />
-              <Route path="/submissions/new" element={<SubmitPage />} />
-              <Route path="/submissions/:id" element={<SubmissionDetailPage />} />
               <Route path="/terms" element={<TermsPage />} />
               <Route path="/privacy" element={<PrivacyPage />} />
+
+              {/* Protected Application Routes */}
+              <Route
+                path="/select-brand"
+                element={
+                  <ProtectedRoute>
+                    <SelectBrandPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/workspace"
+                element={
+                  <ProtectedRoute>
+                    <WorkspacePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/submissions/new"
+                element={
+                  <ProtectedRoute>
+                    <SubmitPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/submissions/:id"
+                element={
+                  <ProtectedRoute>
+                    <SubmissionDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+
               <Route path="*" element={<NotFoundPage />} />
             </Routes>
           </main>

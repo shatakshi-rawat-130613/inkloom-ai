@@ -4,8 +4,9 @@
  * authorised brand routing, and strict tenant isolation.
  */
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { api } from '../api/client'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api, setUnauthorizedHandler } from '../api/client'
 import type {
   BrandSummary,
   UserLoginRequest,
@@ -69,6 +70,7 @@ function filterAuthorisedBrands(
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
   const [user, setUser] = useState<UserResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -173,7 +175,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const logout = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(ACTIVE_BRAND_KEY)
+    sessionStorage.clear()
+    setToken(null)
+    setUser(null)
+    setActiveBrand(null)
+    setAvailableBrands([])
+    navigate('/login', { replace: true })
+  }, [navigate])
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      logout()
+    })
+    return () => {
+      setUnauthorizedHandler(null)
+    }
+  }, [logout])
+
   const login = async (payload: UserLoginRequest): Promise<BrandRoutingResult> => {
+    // Clear previous brand context to prevent cross-session context pollution
+    localStorage.removeItem(ACTIVE_BRAND_KEY)
+    sessionStorage.clear()
+    setActiveBrand(null)
+    setAvailableBrands([])
+
     const res = await api.login(payload)
     localStorage.setItem(TOKEN_KEY, res.access_token)
     setToken(res.access_token)
@@ -184,6 +212,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const register = async (payload: UserRegisterRequest): Promise<BrandRoutingResult> => {
+    localStorage.removeItem(ACTIVE_BRAND_KEY)
+    sessionStorage.clear()
+    setActiveBrand(null)
+    setAvailableBrands([])
+
     const res = await api.register(payload)
     localStorage.setItem(TOKEN_KEY, res.access_token)
     setToken(res.access_token)
@@ -194,18 +227,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const demoLogin = async (role: 'admin' | 'creator' | 'reviewer'): Promise<BrandRoutingResult> => {
-    const email = role === 'creator' ? 'editor@lumacare.demo' : `${role}@lumacare.demo`
-    const password = import.meta.env.VITE_DEMO_SEED_PASSWORD || 'LumaCareDemo2026!'
-    return login({ email, password })
-  }
-
-  const logout = () => {
+    // Clear previous user session and brand context before switching demo roles
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(ACTIVE_BRAND_KEY)
+    sessionStorage.clear()
     setToken(null)
     setUser(null)
     setActiveBrand(null)
     setAvailableBrands([])
+
+    const email = role === 'creator' ? 'editor@lumacare.demo' : `${role}@lumacare.demo`
+    const password = import.meta.env.VITE_DEMO_SEED_PASSWORD || 'LumaCareDemo2026!'
+    return login({ email, password })
   }
 
   const switchBrand = (brand: BrandSummary) => {

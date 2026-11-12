@@ -48,6 +48,13 @@ export class ApiError extends Error {
   }
 }
 
+type UnauthorizedHandler = () => void
+let unauthorizedHandler: UnauthorizedHandler | null = null
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`
   const headers = new Headers(options.headers || {})
@@ -65,6 +72,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(url, { ...options, headers })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('inkloom_token')
+        localStorage.removeItem('inkloom_active_brand_id')
+        sessionStorage.clear()
+      }
+      if (unauthorizedHandler) {
+        try {
+          unauthorizedHandler()
+        } catch {
+          // ignore synchronous handler errors
+        }
+      }
+    }
+
     let errorCode = 'http_error'
     let errorMessage = `Request failed with status ${response.status}`
     let errorDetails = null

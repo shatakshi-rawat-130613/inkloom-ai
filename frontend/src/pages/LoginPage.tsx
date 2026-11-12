@@ -10,15 +10,24 @@
  *   5. Automatic post-login brand routing.
  */
 
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { OrganisationLookupResponse } from '../api/types'
 import { useAuth } from '../context/AuthContext'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const { login, register, demoLogin } = useAuth()
+  const location = useLocation()
+  const { user, token, isLoading, login, register, demoLogin } = useAuth()
+
+  // Automatically route authenticated users to workspace or intended destination
+  useEffect(() => {
+    if (!isLoading && user && token) {
+      const from = (location.state as { from?: string } | undefined)?.from || '/workspace'
+      navigate(from, { replace: true })
+    }
+  }, [user, token, isLoading, navigate, location.state])
 
   // Mode: 'login' | 'register'
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
