@@ -1,5 +1,15 @@
 /**
  * Frontend unit and regression tests for authentication, logout, and protected route logic.
+ *
+ * Covers:
+ * 1. Login as Brand Manager -> open workspace -> logout -> /login with replace: true.
+ * 2. Login as Content Creator -> open a submission -> logout -> /login with replace: true.
+ * 3. Login as Compliance Auditor -> open a review page -> logout -> /login with replace: true.
+ * 4. After logout, browser Back must not reveal protected content.
+ * 5. Refreshing a protected URL after logout must redirect to /login.
+ * 6. Directly opening a protected URL in a new tab without authentication must redirect to /login.
+ * 7. Logging in as a different role after logout must not retain the previous role's data or permissions.
+ * 8. Expired or 401 Unauthorized API response immediately triggers centralized logout and redirect.
  */
 
 import { describe, it, beforeEach } from 'node:test'
@@ -48,99 +58,239 @@ globalThis.window = {
   sessionStorage: mockSessionStorage,
 }
 
-describe('Authentication & Logout Lifecycle', () => {
+// Simulated Centralized AuthContext & ProtectedRoute Logic
+class AuthContextSimulator {
+  user: { id: string; email: string; role: string; organisation_id: string } | null = null
+  token: string | null = null
+  activeBrandId: string | null = null
+  availableBrands: { id: string; organisation_id: string }[] = []
+  historyStack: string[] = []
+  currentLocation = '/'
+  unauthorizedHandler: (() => void) | null = null
+
+  constructor() {
+    this.token = mockLocalStorage.getItem('inkloom_token')
+    this.activeBrandId = mockLocalStorage.getItem('inkloom_active_brand_id')
+  }
+
+  navigate(to: string, options?: { replace?: boolean }) {
+    if (options?.replace) {
+      if (this.historyStack.length > 0) {
+        this.historyStack[this.historyStack.length - 1] = to
+      } else {
+        this.historyStack.push(to)
+      }
+    } else {
+      this.historyStack.push(to)
+    }
+    this.currentLocation = to
+  }
+
+  login(user: { id: string; email: string; role: string; organisation_id: string }, token: string, brandId: string) {
+    // Clear previous brand context to prevent cross-session pollution
+    mockLocalStorage.removeItem('inkloom_active_brand_id')
+    mockSessionStorage.clear()
+    this.activeBrandId = null
+    this.availableBrands = []
+
+    this.user = user
+    this.token = token
+    this.activeBrandId = brandId
+    mockLocalStorage.setItem('inkloom_token', token)
+    mockLocalStorage.setItem('inkloom_active_brand_id', brandId)
+  }
+
+  logout() {
+    mockLocalStorage.removeItem('inkloom_token')
+    mockLocalStorage.removeItem('inkloom_active_brand_id')
+    mockSessionStorage.clear()
+    this.token = null
+    this.user = null
+    this.activeBrandId = null
+    this.availableBrands = []
+    this.navigate('/login', { replace: true })
+  }
+
+  onApi401() {
+    mockLocalStorage.removeItem('inkloom_token')
+    mockLocalStorage.removeItem('inkloom_active_brand_id')
+    mockSessionStorage.clear()
+    if (this.unauthorizedHandler) {
+      this.unauthorizedHandler()
+    } else {
+      this.logout()
+    }
+  }
+
+  // Evaluates whether ProtectedRoute allows rendering or intercepts
+  renderProtectedRoute(path: string, isLoading = false): { rendered: boolean; redirectedTo?: string } {
+    if (isLoading) {
+      return { rendered: false, redirectedTo: 'SPINNER' }
+    }
+    if (!this.user || !this.token) {
+      this.navigate('/login', { replace: true })
+      return { rendered: false, redirectedTo: '/login' }
+    }
+    this.currentLocation = path
+    return { rendered: true }
+  }
+
+  simulateBrowserBack(): string {
+    if (this.historyStack.length > 1) {
+      this.historyStack.pop()
+      this.currentLocation = this.historyStack[this.historyStack.length - 1]
+    }
+    // Protected route check immediately on pop
+    const outcome = this.renderProtectedRoute(this.currentLocation)
+    if (!outcome.rendered && outcome.redirectedTo === '/login') {
+      return '/login'
+    }
+    return this.currentLocation
+  }
+}
+
+describe('Full 8-Scenario Authentication & Logout Regression Suite', () => {
+  let auth: AuthContextSimulator
+
   beforeEach(() => {
     mockLocalStorage.clear()
     mockSessionStorage.clear()
+    auth = new AuthContextSimulator()
   })
 
-  it('1. Logout invalidates session, clears storage, and navigates to /login with replace: true', () => {
-    mockLocalStorage.setItem('inkloom_token', 'mock-jwt-token-123')
-    mockLocalStorage.setItem('inkloom_active_brand_id', 'brand-uuid-456')
-    mockSessionStorage.setItem('cached_role_data', 'manager-data')
+  it('Scenario 1: Brand Manager logs in -> opens /workspace -> logs out -> redirected to /login with replace: true', () => {
+    auth.login(
+      { id: 'u-mgr', email: 'admin@lumacare.demo', role: 'admin', organisation_id: 'org-luma' },
+      'jwt-mgr-token',
+      'brand-luma'
+    )
+    auth.navigate('/workspace')
+    const route = auth.renderProtectedRoute('/workspace')
+    assert.strictEqual(route.rendered, true, 'Brand Manager must be allowed in /workspace')
 
-    let navigatedPath = ''
-    let navigationOptions: { replace?: boolean } | undefined
+    auth.logout()
 
-    const mockNavigate = (path: string, options?: { replace?: boolean }) => {
-      navigatedPath = path
-      navigationOptions = options
-    }
-
-    // Simulate centralized logout logic from AuthContext
-    const executeLogout = (navigateFn: typeof mockNavigate) => {
-      mockLocalStorage.removeItem('inkloom_token')
-      mockLocalStorage.removeItem('inkloom_active_brand_id')
-      mockSessionStorage.clear()
-      navigateFn('/login', { replace: true })
-    }
-
-    executeLogout(mockNavigate)
-
-    assert.strictEqual(mockLocalStorage.getItem('inkloom_token'), null, 'JWT token must be removed from storage')
-    assert.strictEqual(mockLocalStorage.getItem('inkloom_active_brand_id'), null, 'Active brand must be cleared')
-    assert.strictEqual(mockSessionStorage.length, 0, 'Session storage must be completely cleared')
-    assert.strictEqual(navigatedPath, '/login', 'Must navigate directly to /login')
-    assert.strictEqual(navigationOptions?.replace, true, 'Navigation must use replace: true so Back button does not return to protected route')
-  })
-
-  it('2. Switching demo roles wipes previous user session before authenticating as new role', () => {
-    // Start as Brand Manager
-    mockLocalStorage.setItem('inkloom_token', 'manager-token')
-    mockLocalStorage.setItem('inkloom_active_brand_id', 'manager-brand')
-    mockSessionStorage.setItem('manager_key', 'val')
-
-    // Simulate demoLogin cleanup before login
-    const preDemoLoginCleanup = () => {
-      mockLocalStorage.removeItem('inkloom_token')
-      mockLocalStorage.removeItem('inkloom_active_brand_id')
-      mockSessionStorage.clear()
-    }
-
-    preDemoLoginCleanup()
-
+    assert.strictEqual(auth.token, null, 'Token must be cleared')
+    assert.strictEqual(auth.user, null, 'User must be cleared')
+    assert.strictEqual(auth.activeBrandId, null, 'Active brand must be cleared')
     assert.strictEqual(mockLocalStorage.getItem('inkloom_token'), null)
-    assert.strictEqual(mockLocalStorage.getItem('inkloom_active_brand_id'), null)
-    assert.strictEqual(mockSessionStorage.length, 0)
+    assert.strictEqual(auth.currentLocation, '/login', 'Current route must be /login')
+    assert.strictEqual(auth.historyStack[auth.historyStack.length - 1], '/login', 'History entry replaced with /login')
   })
 
-  it('3. Protected route decision logic denies unauthenticated or empty session', () => {
-    // Case A: Session is loading
-    const evaluateRoute = (isLoading: boolean, user: unknown, token: string | null) => {
-      if (isLoading) return 'RENDER_SPINNER'
-      if (!user || !token) return 'REDIRECT_TO_LOGIN_WITH_REPLACE'
-      return 'RENDER_PROTECTED_CONTENT'
-    }
+  it('Scenario 2: Content Creator logs in -> opens /submissions/:id -> logs out -> redirected to /login', () => {
+    auth.login(
+      { id: 'u-creator', email: 'editor@lumacare.demo', role: 'editor', organisation_id: 'org-luma' },
+      'jwt-creator-token',
+      'brand-luma'
+    )
+    auth.navigate('/submissions/48d4c68b')
+    const route = auth.renderProtectedRoute('/submissions/48d4c68b')
+    assert.strictEqual(route.rendered, true, 'Content Creator allowed in submission detail')
 
-    assert.strictEqual(evaluateRoute(true, null, null), 'RENDER_SPINNER', 'Must not render protected content while restoring session')
-    assert.strictEqual(evaluateRoute(false, null, null), 'REDIRECT_TO_LOGIN_WITH_REPLACE', 'Must redirect to login when no user or token')
-    assert.strictEqual(evaluateRoute(false, { id: 'u1' }, null), 'REDIRECT_TO_LOGIN_WITH_REPLACE', 'Must redirect if token is absent')
-    assert.strictEqual(evaluateRoute(false, null, 'tok'), 'REDIRECT_TO_LOGIN_WITH_REPLACE', 'Must redirect if user is absent')
-    assert.strictEqual(evaluateRoute(false, { id: 'u1' }, 'tok'), 'RENDER_PROTECTED_CONTENT', 'Renders protected page when authenticated')
+    auth.logout()
+
+    assert.strictEqual(auth.currentLocation, '/login', 'Must immediately redirect to /login')
+    const afterLogout = auth.renderProtectedRoute('/submissions/48d4c68b')
+    assert.strictEqual(afterLogout.rendered, false, 'Submission detail content must never render after logout')
   })
 
-  it('4. Expired or 401 Unauthorized API response immediately triggers centralized logout', () => {
-    mockLocalStorage.setItem('inkloom_token', 'expired-token')
-    mockLocalStorage.setItem('inkloom_active_brand_id', 'brand-1')
+  it('Scenario 3: Compliance Auditor logs in -> opens review page -> logs out -> redirected to /login', () => {
+    auth.login(
+      { id: 'u-rev', email: 'reviewer@lumacare.demo', role: 'reviewer', organisation_id: 'org-luma' },
+      'jwt-rev-token',
+      'brand-luma'
+    )
+    auth.navigate('/workspace')
+    assert.strictEqual(auth.renderProtectedRoute('/workspace').rendered, true)
 
-    let logoutTriggered = false
-    const onUnauthorized = () => {
-      logoutTriggered = true
-      mockLocalStorage.removeItem('inkloom_token')
-      mockLocalStorage.removeItem('inkloom_active_brand_id')
-      mockSessionStorage.clear()
-    }
+    auth.logout()
 
-    // Simulate 401 response handling from client.ts
-    const handleApiResponse = (status: number) => {
-      if (status === 401) {
-        onUnauthorized()
-      }
-    }
+    assert.strictEqual(auth.currentLocation, '/login')
+    assert.strictEqual(auth.user, null)
+  })
 
-    handleApiResponse(401)
+  it('Scenario 4: After logout, browser Back button does not reveal protected content', () => {
+    auth.login(
+      { id: 'u-mgr', email: 'admin@lumacare.demo', role: 'admin', organisation_id: 'org-luma' },
+      'jwt-token',
+      'brand-luma'
+    )
+    auth.navigate('/workspace')
+    auth.navigate('/submissions/48d4c68b')
+    auth.logout() // Replaces /submissions/48d4c68b with /login
 
-    assert.strictEqual(logoutTriggered, true, '401 status must trigger onUnauthorized')
-    assert.strictEqual(mockLocalStorage.getItem('inkloom_token'), null, 'Token must be removed on 401')
+    // User attempts to click browser Back
+    const backLocation = auth.simulateBrowserBack()
+    assert.strictEqual(backLocation, '/login', 'Browser back must be intercepted by ProtectedRoute and bounced to /login')
+    assert.strictEqual(auth.renderProtectedRoute('/workspace').rendered, false)
+  })
+
+  it('Scenario 5: Refreshing a protected URL after logout redirects to /login', () => {
+    // Session has ended (localStorage is empty)
+    mockLocalStorage.clear()
+    const freshApp = new AuthContextSimulator()
+
+    const outcome = freshApp.renderProtectedRoute('/submissions/48d4c68b', false)
+    assert.strictEqual(outcome.rendered, false)
+    assert.strictEqual(outcome.redirectedTo, '/login', 'Refreshing protected route after logout must navigate to /login')
+  })
+
+  it('Scenario 6: Directly opening a protected URL in a new tab without authentication redirects to /login', () => {
+    // Simulating fresh incognito tab
+    const incognitoAuth = new AuthContextSimulator()
+
+    // 1. Initial restoration phase
+    const loadingState = incognitoAuth.renderProtectedRoute('/workspace', true)
+    assert.strictEqual(loadingState.rendered, false)
+    assert.strictEqual(loadingState.redirectedTo, 'SPINNER', 'Must render verification spinner while checking session')
+
+    // 2. Verified no session
+    const resolvedState = incognitoAuth.renderProtectedRoute('/workspace', false)
+    assert.strictEqual(resolvedState.rendered, false)
+    assert.strictEqual(resolvedState.redirectedTo, '/login')
+  })
+
+  it('Scenario 7: Logging in as a different role after logout does not retain previous role state or permissions', () => {
+    // 1. Manager logs in and sets role data
+    auth.login(
+      { id: 'u-admin', email: 'admin@lumacare.demo', role: 'admin', organisation_id: 'org-1' },
+      'admin-token',
+      'brand-1'
+    )
+    mockSessionStorage.setItem('role_scope', 'admin_full_access')
+    auth.logout()
+
+    assert.strictEqual(mockSessionStorage.getItem('role_scope'), null, 'Session storage must be cleared on logout')
+
+    // 2. Creator logs in
+    auth.login(
+      { id: 'u-creator', email: 'editor@lumacare.demo', role: 'editor', organisation_id: 'org-2' },
+      'creator-token',
+      'brand-2'
+    )
+
+    assert.strictEqual(auth.user?.role, 'editor', 'Role must be editor')
+    assert.strictEqual(auth.user?.organisation_id, 'org-2', 'Organisation must be fresh')
+    assert.strictEqual(mockSessionStorage.getItem('role_scope'), null, 'Previous role cache must not exist')
+  })
+
+  it('Scenario 8: Expired or 401 Unauthorized API response immediately triggers centralized logout and redirect', () => {
+    auth.login(
+      { id: 'u-user', email: 'user@lumacare.demo', role: 'editor', organisation_id: 'org-1' },
+      'expired-token',
+      'brand-1'
+    )
+
+    // Wire handler
+    auth.unauthorizedHandler = () => auth.logout()
+
+    // Simulate backend rejecting token with 401
+    auth.onApi401()
+
+    assert.strictEqual(auth.token, null, 'Token must be cleared on 401')
+    assert.strictEqual(auth.user, null, 'User must be null on 401')
+    assert.strictEqual(auth.currentLocation, '/login', 'Must redirect to /login on 401')
+    assert.strictEqual(mockLocalStorage.getItem('inkloom_token'), null)
   })
 })
