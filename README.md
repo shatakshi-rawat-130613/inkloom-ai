@@ -3,7 +3,7 @@
 > **Round 3 Final Master Implementation & Acceptance Package**  
 > Evaluates submitted marketing, promotional, and communication content against a brand's approved guidelines, facts, terminology, visual identity, and voice. It produces explainable findings, visual compliance reports, and suggested corrections while preserving human authority over final approval.
 
-[![Backend Tests](https://img.shields.io/badge/pytest-162%20passed-success?logo=pytest&logoColor=white)](file:///backend/tests)
+[![Backend Tests](https://img.shields.io/badge/pytest-169%20passed-success?logo=pytest&logoColor=white)](file:///backend/tests)
 [![TypeScript](https://img.shields.io/badge/typescript-strict%20clean-blue?logo=typescript&logoColor=white)](file:///frontend/tsconfig.json)
 [![React 19](https://img.shields.io/badge/react-19.3.1-61DAFB?logo=react&logoColor=black)](file:///frontend/package.json)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.162.0-009688?logo=fastapi&logoColor=white)](file:///backend/requirements.txt)
@@ -40,7 +40,7 @@
    - [Step 5: Frontend Setup & Dev Server](#step-5-frontend-setup--dev-server)
 5. [Complete Environment Variable Reference](#5-complete-environment-variable-reference)
 6. [Testing & Quality Assurance Guide](#6-testing--quality-assurance-guide)
-   - [Running Backend Pytest Suite (162 Tests)](#running-backend-pytest-suite-162-tests)
+   - [Running Backend Pytest Suite (169 Tests)](#running-backend-pytest-suite-169-tests)
    - [Contract Parity Verification](#contract-parity-verification)
    - [Frontend Linting & TypeScript Build](#frontend-linting--typescript-build)
    - [Automated Live Production Acceptance Audits](#automated-live-production-acceptance-audits)
@@ -56,7 +56,7 @@
 
 In Round 3 (the Final Round), Inkloom AI was transformed from a single-brand compliance checker into an **enterprise-ready, multi-brand brand-governance platform**. 
 
-All three major commitments for Round 3 have been completely implemented, verified on the live production stack (Render + Supabase + Vercel), and backed by a comprehensive suite of **162 passing backend tests** and zero-warning TypeScript checks:
+All three major commitments for Round 3 have been completely implemented, verified on the live production stack (Render + Supabase + Vercel), and backed by a comprehensive suite of **169 passing backend tests** and zero-warning TypeScript checks:
 
 1. **Multi-Brand Management & Tenant Isolation**:
    - Independent organisation self-registration with automatic initial Brand Manager (`admin`) role provisioning.
@@ -156,7 +156,7 @@ flowchart TD
 | **Multimodal AI** | Google GenAI SDK | `2.34.0` | Official SDK communicating with Google Gemini 3.6/3.8 Flash with structured JSON schemas and vision OCR. |
 | **Document Processing** | PyPDF & Python-Multipart | `7.0.1` / `0.0.33` | Stream text extraction, scanned page image extraction, and multipart file uploads. |
 | **Image Processing** | Pillow (PIL) | `13.0.0` | Image format conversion, raster manipulation, perceptual dHash calculation, and color extraction. |
-| **Testing** | Pytest & HTTPX | `9.2.0` / `0.28.1` | 162 unit, integration, contract parity, and security regression tests. |
+| **Testing** | Pytest & HTTPX | `9.2.0` / `0.28.1` | 169 unit, integration, contract parity, and security regression tests. |
 
 ---
 
@@ -286,20 +286,25 @@ Inkloom AI supports both **PostgreSQL** and zero-configuration **SQLite**.
 By default, if `DATABASE_URL` is omitted, Inkloom AI connects to `sqlite:///./inkloom_dev.db`.
 
 ```bash
-# Create local .env file in backend/
+# Create local .env file in backend/ (git-ignored)
+# Choose your own private local demo password for DEMO_SEED_PASSWORD
 cat << 'EOF' > .env
+ENVIRONMENT=development
 DATABASE_URL=sqlite:///./inkloom_dev.db
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.8-flash
 CORS_ORIGINS=http://localhost:5173
-JWT_SECRET_KEY=local-dev-secret-key-at-least-32-characters-long
-DEMO_SEED_PASSWORD=LumaCareDemo2026!
+# In development, leave JWT_SECRET_KEY empty to auto-generate a safe random secret per process
+JWT_SECRET_KEY=
+# DEMO_SEED_PASSWORD is required when running python -m app.seed to seed demo accounts.
+# Set any local password of your choice:
+DEMO_SEED_PASSWORD=YourLocalDevPassword123!
 EOF
 
 # Run database schema migrations & create tables
 python -c "from app.db import init_db; init_db()"
 
-# Seed demo brand (LumaCare) and demo users
+# Seed demo brand (LumaCare) and demo users using your configured local password
 python -m app.seed
 ```
 
@@ -308,14 +313,15 @@ If you have a PostgreSQL database running:
 
 ```bash
 # Set your PostgreSQL connection string in backend/.env:
-# Note: Use postgresql+psycopg:// to use the psycopg 3 driver
+# Note: Use postgresql+psycopg:// to use the modern psycopg 3 driver
 cat << 'EOF' > .env
+ENVIRONMENT=development
 DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/inkloom
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-3.8-flash
 CORS_ORIGINS=http://localhost:5173
-JWT_SECRET_KEY=local-dev-secret-key-at-least-32-characters-long
-DEMO_SEED_PASSWORD=LumaCareDemo2026!
+JWT_SECRET_KEY=
+DEMO_SEED_PASSWORD=YourLocalDevPassword123!
 EOF
 
 # Run database schema migrations
@@ -356,15 +362,23 @@ cd inkloom-ai/frontend
 # Install frontend dependencies
 npm install
 
-# (Optional) Create local env file to point to your local FastAPI backend
+# (Optional) Create local env file in frontend/ (git-ignored)
+# VITE_DEMO_SEED_PASSWORD is for local development convenience ONLY.
+# It should match the DEMO_SEED_PASSWORD set in backend/.env.
 cat << 'EOF' > .env.local
 VITE_API_BASE_URL=http://localhost:8000
-VITE_DEMO_SEED_PASSWORD=LumaCareDemo2026!
+VITE_DEMO_SEED_PASSWORD=YourLocalDevPassword123!
 EOF
 
 # Start Vite development server
 npm run dev
 ```
+
+> [!WARNING] VITE Environment Variable Security
+> Any variable prefixed with `VITE_` (such as `VITE_DEMO_SEED_PASSWORD`) is statically baked into client-side JavaScript during `vite build` and is visible to any browser inspecting the application.
+> - **Only configure `VITE_DEMO_SEED_PASSWORD` in local development (`frontend/.env.local`).**
+> - **NEVER set `VITE_DEMO_SEED_PASSWORD` in production hosting environments (e.g. Vercel).**
+> - In production, users enter their credentials directly or register their own organisations.
 
 Open your browser at **http://localhost:5173**.  
 You can explore the public landing page, click **Login** or **Demo Login**, and access the multi-brand workspace.
@@ -379,15 +393,16 @@ Inkloom AI uses typed environment configuration via Pydantic Settings (`backend/
 
 | Variable | Type | Required? | Default / Fallback | Description & Safe Sample Value |
 |---|---|---|---|---|
-| `DATABASE_URL` | `string` | **No** | `sqlite:///./inkloom_dev.db` | Connection string for database. For PostgreSQL, use `postgresql+psycopg://user:pass@host:5432/dbname`. For SQLite, use `sqlite:///./inkloom_dev.db`. |
+| `ENVIRONMENT` | `string` | **No** | `development` | Runtime mode: `development`, `test`, or `production`. In production, strict security validations are enforced on `JWT_SECRET_KEY`. |
+| `DATABASE_URL` | `string` | **No** | `sqlite:///./inkloom_dev.db` | Database connection string. For PostgreSQL, use `postgresql+psycopg://user:pass@host:5432/dbname`. For SQLite, use `sqlite:///./inkloom_dev.db`. |
 | `GEMINI_API_KEY` | `string` | **No** | `None` | Google Gemini API key. If omitted, AI analysis is disabled (`ai_status="disabled"`), and the deterministic rule engine runs standalone. |
 | `GEMINI_MODEL` | `string` | **No** | `gemini-3.8-flash` | Gemini model ID. Render production runs `gemini-3.6-flash`. Automatic fallback to `gemini-3.1-flash-lite` on quota/503. |
 | `GEMINI_TIMEOUT_SECONDS` | `float` | **No** | `30.0` | Timeout in seconds for external Gemini API calls before triggering fallback or timing out. |
 | `CORS_ORIGINS` | `string` | **No** | `http://localhost:5173,https://inkloom-ai-wheat.vercel.app` | Comma-separated list of allowed frontend origins for CORS headers. Regex `^https:\/\/.*\.vercel\.app$` is also permitted. |
-| `JWT_SECRET_KEY` | `string` | **No** | (Pre-configured default) | Cryptographic secret key used to sign and verify session JWTs using HMAC-SHA256 (`HS256`). Must be $\ge 32$ characters in production. |
+| `JWT_SECRET_KEY` | `string` | **In Production** | Auto-generated random in dev | Cryptographic secret key used to sign and verify session JWTs using HMAC-SHA256 (`HS256`). In production, this **must** be an independently generated strong secret of $\ge 32$ characters. Known static development defaults are strictly blocked. Generate with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`. |
 | `JWT_ALGORITHM` | `string` | **No** | `HS256` | JWT signing algorithm. Standard: `HS256`. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `int` | **No** | `10080` (7 days) | Token expiration duration in minutes. |
-| `DEMO_SEED_PASSWORD` | `string` | **No** | `""` (fallback in seed: `LumaCareDemo2026!`) | Password assigned to demo users during database seeding. |
+| `DEMO_SEED_PASSWORD` | `string` | **When Seeding** | `""` (no default) | Password assigned to demo users when running `python -m app.seed`. Fails with a clear error if missing during seeding; no password is ever printed. |
 | `MAX_CONTENT_CHARS` | `int` | **No** | `10000` | Maximum character length for a single content submission version. |
 | `ANALYZE_RATE_LIMIT_PER_MINUTE` | `int` | **No** | `10` | Maximum compliance analysis requests per minute per client IP. |
 
@@ -395,8 +410,8 @@ Inkloom AI uses typed environment configuration via Pydantic Settings (`backend/
 
 | Variable | Type | Required? | Default / Fallback | Description & Safe Sample Value |
 |---|---|---|---|---|
-| `VITE_API_BASE_URL` | `string` | **No** | `""` (relative root) | Base URL for FastAPI backend. In local development: `http://localhost:8000`. In production: left empty or set to Render backend URL. |
-| `VITE_DEMO_SEED_PASSWORD` | `string` | **No** | `""` | Optional helper for pre-filling demo login buttons during local testing. |
+| `VITE_API_BASE_URL` | `string` | **No** | `""` (relative root) | Base URL for FastAPI backend. In local development: `http://localhost:8000`. In production: left empty (relative) or set to the Render backend URL. |
+| `VITE_DEMO_SEED_PASSWORD` | `string` | **Dev Only** | `""` | Local development helper for pre-filling demo login buttons. **Never set in production builds (e.g. Vercel) because VITE variables are exposed in browser JavaScript bundles.** |
 
 > [!SECURITY NOTE]  
 > Never commit `.env` or `.env.local` files containing real production secrets. Both files are included in `.gitignore`.
@@ -407,7 +422,7 @@ Inkloom AI uses typed environment configuration via Pydantic Settings (`backend/
 
 Inkloom AI enforces high software quality standards through automated contract testing, unit testing, security regression suites, and static analysis.
 
-### Running Backend Pytest Suite (162 Tests)
+### Running Backend Pytest Suite (169 Tests)
 
 Ensure your virtual environment is active in the `backend/` directory:
 
@@ -415,20 +430,23 @@ Ensure your virtual environment is active in the `backend/` directory:
 cd backend
 source .venv/bin/activate
 
-# Run all 162 automated tests with verbose output
+# Run all 169 automated tests with verbose output
 pytest -v
 ```
 
-All 162 tests pass in ~20 seconds:
+All 169 tests pass in ~21 seconds:
 
 ```
-======================= 162 passed, 1 warning in 20.85s ========================
+======================= 169 passed, 1 warning in 20.80s ========================
 ```
 
 #### Running Specific Test Suites
 
 ```bash
-# Security & credential redaction tests (OAuth, API keys, private keys)
+# Security configuration & credential validation tests
+pytest tests/test_security_configuration.py -v
+
+# Secret scanner & redaction tests (OAuth, API keys, private keys)
 pytest tests/test_security_scanner.py -v
 
 # Strict multi-tenant isolation tests (404 on cross-tenant read/write)
@@ -456,7 +474,7 @@ To prevent schema drift between backend Pydantic models and frontend TypeScript 
 ```bash
 pytest tests/test_contract_parity.py -v
 ```
-This test inspects `backend/app/schemas.py` and `frontend/src/types.ts` to assert that all enum values, interfaces, and field names match 100%.
+This test inspects `backend/app/schemas.py` and `frontend/src/api/types.ts` to assert that all enum values, interfaces, and field names match 100%.
 
 ---
 
@@ -564,7 +582,7 @@ Inkloom AI includes pre-seeded demo accounts and one-click role switching on the
    - **Brand Manager** (`admin@lumacare.demo`): Provision brands, configure guidelines, facts, terms, visual assets, and manage team members.
    - **Content Creator** (`editor@lumacare.demo`): Draft marketing copy, upload documents, trigger OCR, run compliance analysis, and request review.
    - **Compliance Auditor** (`reviewer@lumacare.demo`): Review submitted drafts, inspect claim grounding, and issue final review decisions.
-3. The frontend authenticates through `POST /api/auth/login`, receives a signed JWT, selects the default LumaCare workspace, and routes to the workspace.
+3. The frontend authenticates through `POST /api/auth/login`, receives a signed JWT, dynamically queries `GET /api/brands` for the authenticated user's organisation, and automatically resolves and routes to the user's authorised brand workspace (or routes to `/select-brand` if the organisation has multiple brands, or `/create-brand` if none exist). It never hardcodes a global workspace.
 
 ### Option 2: Self-Registration (Test Multi-Tenancy)
 1. On the login page, switch to the **Register** tab.
@@ -588,14 +606,22 @@ Inkloom AI includes pre-seeded demo accounts and one-click role switching on the
   DATABASE_URL=postgresql+psycopg://user:password@host:5432/dbname
   ```
 
-### 3. Gemini API 429 Quota or Unavailable (503)
+### 3. Missing `DEMO_SEED_PASSWORD` During Seeding
+- **Cause**: Running `python -m app.seed` without setting `DEMO_SEED_PASSWORD` in the environment.
+- **Solution**: Set `DEMO_SEED_PASSWORD=YourLocalPassword` in your `backend/.env` file before executing the seed script.
+
+### 4. Insecure `JWT_SECRET_KEY` in Production
+- **Cause**: Deploying to production with an empty `JWT_SECRET_KEY`, a known default (such as `"inkloom-production-jwt-secret-key-do-not-share-32charsmin"`), or a secret shorter than 32 characters.
+- **Solution**: Generate a strong secret with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` and configure it in your production host environment (e.g. Render Dashboard).
+
+### 5. Gemini API 429 Quota or Unavailable (503)
 - **Behavior**: Inkloom AI is designed with graceful resilience. If the primary Gemini model (`gemini-3.6-flash` / `gemini-3.8-flash`) returns a 503 error, the backend retries once, then automatically falls back to `gemini-3.1-flash-lite`. If no API key is provided or the quota is completely exhausted, the system marks `ai_status="disabled"` and completes the full analysis using the deterministic rule engine.
 
-### 4. CORS Errors During Local Development
+### 6. CORS Errors During Local Development
 - **Cause**: Local frontend runs on a port not listed in `CORS_ORIGINS`.
 - **Solution**: Add your frontend origin (e.g. `http://localhost:5173`) to `CORS_ORIGINS` in `backend/.env`.
 
-### 5. Render Free-Tier Cold Start
+### 7. Render Free-Tier Cold Start
 - **Behavior**: If the Render backend has been idle, the initial HTTP request may experience a 30-50 second cold-start delay while the container spins up. Subsequent requests respond in under 200ms.
 
 ---

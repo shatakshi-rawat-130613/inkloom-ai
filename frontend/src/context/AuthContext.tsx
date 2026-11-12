@@ -195,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const demoLogin = async (role: 'admin' | 'creator' | 'reviewer'): Promise<BrandRoutingResult> => {
     const email = role === 'creator' ? 'editor@lumacare.demo' : `${role}@lumacare.demo`
-    const password = 'LumaCareDemo2026!'
+    const password = import.meta.env.VITE_DEMO_SEED_PASSWORD || 'LumaCareDemo2026!'
     return login({ email, password })
   }
 

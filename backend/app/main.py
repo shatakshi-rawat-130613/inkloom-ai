@@ -25,11 +25,14 @@ logger = logging.getLogger("inkloom")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure tables exist and demo brand is seeded
+    # Startup: ensure tables exist and demo brand is seeded if configured
     logger.info("Initializing database tables and seed data...")
     init_db()
     with SessionLocal() as session:
-        seed_demo_data(session)
+        try:
+            seed_demo_data(session)
+        except ValueError as exc:
+            logger.info("Demo account seeding skipped on startup: %s", exc)
     logger.info("Startup complete.")
     yield
 

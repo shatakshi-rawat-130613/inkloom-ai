@@ -16,11 +16,16 @@ from app.models import ApprovedFact, ApprovedTerm, BrandAsset, BrandGuideline, B
 
 DEMO_ORG_SLUG = "lumacare-demo"
 DEMO_BRAND_SLUG = "lumacare"
+
+
 def get_seed_password() -> str:
     pwd = get_settings().demo_seed_password
-    if not pwd:
-        return "LumaCareDemo2026!"
-    return pwd
+    if not pwd or not pwd.strip():
+        raise ValueError(
+            "DEMO_SEED_PASSWORD environment variable must be explicitly provided when seeding demo accounts. "
+            "Please configure DEMO_SEED_PASSWORD before running the seed script."
+        )
+    return pwd.strip()
 
 ORGANISATION = {"slug": DEMO_ORG_SLUG, "name": "LumaCare (fictional demo organisation)"}
 
@@ -167,9 +172,6 @@ def seed_demo_data(db: Session) -> BrandProfile:
     for a in ASSETS:
         if a["name"] not in existing_assets:
             db.add(BrandAsset(brand_id=brand.id, **a))
-
-    db.commit()
-    return brand
 
     db.commit()
     return brand
