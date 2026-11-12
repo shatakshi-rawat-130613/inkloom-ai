@@ -3,11 +3,12 @@
 > **Round 3 Final Master Implementation & Acceptance Package**  
 > Evaluates submitted marketing, promotional, and communication content against a brand's approved guidelines, facts, terminology, visual identity, and voice. It produces explainable findings, visual compliance reports, and suggested corrections while preserving human authority over final approval.
 
-[![Backend Tests](https://img.shields.io/badge/pytest-169%20passed-success?logo=pytest&logoColor=white)](file:///backend/tests)
-[![TypeScript](https://img.shields.io/badge/typescript-strict%20clean-blue?logo=typescript&logoColor=white)](file:///frontend/tsconfig.json)
-[![React 19](https://img.shields.io/badge/react-19.3.1-61DAFB?logo=react&logoColor=black)](file:///frontend/package.json)
-[![FastAPI](https://img.shields.io/badge/fastapi-0.162.0-009688?logo=fastapi&logoColor=white)](file:///backend/requirements.txt)
-[![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](file:///backend/requirements.txt)
+[![Backend Tests](https://img.shields.io/badge/pytest-169%20passed-success?logo=pytest&logoColor=white)](backend/tests)
+[![Frontend Tests](https://img.shields.io/badge/node%20test-8%20passed-success?logo=nodedotjs&logoColor=white)](frontend/test/auth_logout.test.ts)
+[![TypeScript](https://img.shields.io/badge/typescript-strict%20clean-blue?logo=typescript&logoColor=white)](frontend/tsconfig.json)
+[![React 19](https://img.shields.io/badge/react-19.3.1-61DAFB?logo=react&logoColor=black)](frontend/package.json)
+[![FastAPI](https://img.shields.io/badge/fastapi-0.162.0-009688?logo=fastapi&logoColor=white)](backend/requirements.txt)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](backend/requirements.txt)
 
 ---
 
@@ -42,6 +43,7 @@
 6. [Testing & Quality Assurance Guide](#6-testing--quality-assurance-guide)
    - [Running Backend Pytest Suite (169 Tests)](#running-backend-pytest-suite-169-tests)
    - [Contract Parity Verification](#contract-parity-verification)
+   - [Running Frontend Regression Suite (8 Tests)](#running-frontend-regression-suite-8-tests)
    - [Frontend Linting & TypeScript Build](#frontend-linting--typescript-build)
    - [Automated Live Production Acceptance Audits](#automated-live-production-acceptance-audits)
 7. [API Endpoints Reference](#7-api-endpoints-reference)
@@ -112,7 +114,7 @@ flowchart TD
     end
 
     subgraph DataStore["Data Layer (PostgreSQL / SQLite)"]
-        Alembic["Alembic Versioned Migrations (001, 002)"]
+        Alembic["Alembic Migrations: 001_initial_schema & 002_add_auth_and_visual_assets (head)"]
         Tables[("Organisations, Users, Brands, Guidelines, Facts, Terms, Assets, Submissions, Versions, Runs, Reviews, Audit Logs")]
     end
 
@@ -182,6 +184,10 @@ flowchart TD
 - **Cryptographic Tenant Isolation**:
   - All database queries for brands, guidelines, facts, assets, submissions, and audit logs are strictly scoped by `organisation_id`.
   - Attempts to access resources outside the authenticated user's organisation return `404 Not Found` (never leaking resource existence or IDs).
+- **Alembic Schema Evolution & Migration History**:
+  - `001_initial_schema`: Initial multi-tenant baseline migration creating tables for `organisations`, `users`, `brands`, `guidelines`, `factual_statements`, `terminology_rules`, `submissions`, `submission_versions`, `analysis_runs`, `review_records`, and `audit_logs`.
+  - `002_add_auth_and_visual_assets`: Additive schema revision introducing `password_hash` and `is_active` to `users`, `brand_assets` (supporting logos, color palettes, and brand guidelines metadata), and `document_extractions` (storing multimodal extraction and OCR artifacts). Confirmed as the current Alembic head revision (`002_add_auth_and_visual_assets`).
+  - **Automated Startup Migration & Zero-Downtime Synchronization**: `init_db()` in `backend/app/db.py` inspects existing database tables on startup, automatically stamps `001_initial_schema` if unversioned tables exist, and executes `command.upgrade(alembic_cfg, "head")` to guarantee that both cloud PostgreSQL (Supabase / Render) and local SQLite instances are always synchronized at head without manual intervention or data loss.
 
 ---
 
@@ -301,8 +307,11 @@ JWT_SECRET_KEY=
 DEMO_SEED_PASSWORD=YourLocalDevPassword123!
 EOF
 
-# Run database schema migrations & create tables
+# Run database schema migrations (executes Alembic upgrade to head)
 python -c "from app.db import init_db; init_db()"
+
+# (Optional) Verify migration revision via Alembic CLI (head: 002_add_auth_and_visual_assets)
+alembic current
 
 # Seed demo brand (LumaCare) and demo users using your configured local password
 python -m app.seed
@@ -324,8 +333,11 @@ JWT_SECRET_KEY=
 DEMO_SEED_PASSWORD=YourLocalDevPassword123!
 EOF
 
-# Run database schema migrations
+# Run database schema migrations (executes Alembic upgrade to head)
 python -c "from app.db import init_db; init_db()"
+
+# (Optional) Verify migration revision via Alembic CLI (head: 002_add_auth_and_visual_assets)
+alembic current
 
 # Seed demo data
 python -m app.seed
@@ -475,6 +487,34 @@ To prevent schema drift between backend Pydantic models and frontend TypeScript 
 pytest tests/test_contract_parity.py -v
 ```
 This test inspects `backend/app/schemas.py` and `frontend/src/api/types.ts` to assert that all enum values, interfaces, and field names match 100%.
+
+---
+
+### Running Frontend Regression Suite (8 Tests)
+
+Inkloom AI includes a comprehensive 8-scenario automated authentication and logout regression test suite verifying state clearance, navigation redirection, browser history replacement, and 401 interceptor handling:
+
+```bash
+cd frontend
+npm test
+```
+
+Expected output:
+```
+▶ Full 8-Scenario Authentication & Logout Regression Suite
+  ✔ Scenario 1: Brand Manager logs in -> opens /workspace -> logs out -> redirected to /login with replace: true
+  ✔ Scenario 2: Content Creator logs in -> opens /submissions/:id -> logs out -> redirected to /login
+  ✔ Scenario 3: Compliance Auditor logs in -> opens review page -> logs out -> redirected to /login
+  ✔ Scenario 4: After logout, browser Back button does not reveal protected content
+  ✔ Scenario 5: Refreshing a protected URL after logout redirects to /login
+  ✔ Scenario 6: Directly opening a protected URL in a new tab without authentication redirects to /login
+  ✔ Scenario 7: Logging in as a different role after logout does not retain previous role state or permissions
+  ✔ Scenario 8: Expired or 401 Unauthorized API response immediately triggers centralized logout and redirect
+✔ Full 8-Scenario Authentication & Logout Regression Suite
+ℹ tests 8
+ℹ pass 8
+ℹ fail 0
+```
 
 ---
 
