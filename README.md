@@ -78,10 +78,10 @@ All three major commitments for Round 3 have been completely implemented, verifi
    - Sensitive credential and secret scanning detecting OAuth client secrets, API keys, private keys, and database connection URIs, redacting them from logs/previews and enforcing human review.
 
 3. **Claim-Level Grounding, Immutable Versions & Audit History**:
-   - Deterministic rule engine combined with Google Gemini 3.6/3.8 Flash structured JSON inference.
+   - Hybrid analysis pipeline combining compiled deterministic rule checks with Google Gemini structured JSON inference (local default: `gemini-3.8-flash`; production: `gemini-3.6-flash`; high-availability fallback: `gemini-3.1-flash-lite`).
    - Strict grounding verification: every flagged finding must reference valid server-side guidelines or approved facts; ungrounded citations or quotes missing from source text are rejected or downgraded.
    - Immutable versioning model (`v1`, `v2`, `v3`...): revisions create new snapshots while preserving every prior version, run, and finding.
-   - `knowledge_snapshot` preservation: every analysis run records the exact guidelines, facts, and terms active at that moment, guaranteeing historical auditability even as brand guidelines evolve.
+   - `knowledge_snapshot` preservation: every analysis run records the exact guidelines, facts, and terms active at that moment, providing verifiable historical auditability even as brand guidelines evolve.
    - Chronological, append-only audit trail (`audit_logs`) tracking actor, entity, action, and timestamp.
    - Complete human review workflow: submission for review, approvals, rejections with mandatory comments, and revision requests.
 
@@ -108,7 +108,7 @@ flowchart TD
     subgraph Services["Core Application Services"]
         DocExtract["Document Extraction & Vision Service"]
         RuleEngine["Deterministic Rule Engine & Secret Scanner"]
-        GeminiService["Gemini 3.6/3.8 Flash Multimodal Analyzer"]
+        GeminiService["Gemini Multimodal Analyzer (3.8 Flash dev / 3.6 Flash prod / 3.1 Flash-Lite fallback)"]
         Grounding["Grounding Validator & Reference Verifier"]
         Workflow["Submission & Versioning Lifecycle Service"]
     end
@@ -155,7 +155,7 @@ flowchart TD
 | **Database Migrations** | Alembic | `1.20.1` | Versioned, additive migrations preserving historical records without schema resets. |
 | **PostgreSQL Driver** | Psycopg 3 Binary | `3.3.8` | Modern async/sync PostgreSQL driver with Supabase session pooler support. |
 | **Authentication** | PyJWT & Bcrypt | `2.15.1` / `5.0.0` | Secure password hashing (`bcrypt`) and signed JWT access tokens (`HS256`). |
-| **Multimodal AI** | Google GenAI SDK | `2.34.0` | Official SDK communicating with Google Gemini 3.6/3.8 Flash with structured JSON schemas and vision OCR. |
+| **Multimodal AI** | Google GenAI SDK | `2.34.0` | Official SDK communicating with Google Gemini (`gemini-3.8-flash` local default, `gemini-3.6-flash` production, `gemini-3.1-flash-lite` fallback) with structured JSON schemas and vision OCR. |
 | **Document Processing** | PyPDF & Python-Multipart | `7.0.1` / `0.0.33` | Stream text extraction, scanned page image extraction, and multipart file uploads. |
 | **Image Processing** | Pillow (PIL) | `13.0.0` | Image format conversion, raster manipulation, perceptual dHash calculation, and color extraction. |
 | **Testing** | Pytest & HTTPX | `9.2.0` / `0.28.1` | 169 unit, integration, contract parity, and security regression tests. |
@@ -178,16 +178,16 @@ flowchart TD
     - **Terminology Rules**: code, preferred term, prohibited term, notes.
     - **Visual Brand Assets**: asset name, asset type (`logo`, `palette`, `typography`, `imagery`), image URL or SVG, logo specifications, primary hex colors.
 - **Strict 3-Tier Role-Based Access Control (RBAC)**:
-  - **Brand Manager (`admin`)**: Full rights to create and update brands, manage guidelines/facts/terms/assets, and invite or manage team members.
-  - **Content Creator (`editor`)**: Authorized to create submissions, upload marketing creative, generate new content versions, and initiate compliance analyses. Forbidden from mutating brand knowledge or altering team roles (`403 Forbidden`).
-  - **Compliance Auditor (`reviewer`)**: Authorized to review analyzed submissions, issue authoritative governance verdicts (`approved`, `rejected`, `revisions_requested`) with mandatory feedback, and audit compliance logs.
+  - **Brand Manager (`admin`)**: Enforced at the route level via FastAPI dependency `Depends(require_admin)` for brand creation, profile updates, guideline/fact/term/asset mutations, and team member provisioning (`POST /api/auth/members`). Also possesses full review authority.
+  - **Content Creator (`editor`)**: Authorized to create submissions, upload marketing creative, generate new content versions, run compliance analyses, and request review. Service-level checks in `record_review` block creators from reviewing their own submissions (`403 Forbidden`), and route-level dependencies block mutating brand knowledge (`403 Forbidden`).
+  - **Compliance Auditor (`reviewer`)**: Authorized to review analyzed submissions, inspect claim grounding, and record authoritative human review verdicts (`approved`, `rejected`, `revisions_requested`). Service-level checks in `request_review` prevent reviewers from submitting content for review (`403 Forbidden`), and route-level dependencies block modifying brand knowledge (`403 Forbidden`).
 - **Cryptographic Tenant Isolation**:
   - All database queries for brands, guidelines, facts, assets, submissions, and audit logs are strictly scoped by `organisation_id`.
   - Attempts to access resources outside the authenticated user's organisation return `404 Not Found` (never leaking resource existence or IDs).
 - **Alembic Schema Evolution & Migration History**:
   - `001_initial_schema`: Initial multi-tenant baseline migration creating tables for `organisations`, `users`, `brands`, `guidelines`, `factual_statements`, `terminology_rules`, `submissions`, `submission_versions`, `analysis_runs`, `review_records`, and `audit_logs`.
   - `002_add_auth_and_visual_assets`: Additive schema revision introducing `password_hash` and `is_active` to `users`, `brand_assets` (supporting logos, color palettes, and brand guidelines metadata), and `document_extractions` (storing multimodal extraction and OCR artifacts). Confirmed as the current Alembic head revision (`002_add_auth_and_visual_assets`).
-  - **Automated Startup Migration & Zero-Downtime Synchronization**: `init_db()` in `backend/app/db.py` inspects existing database tables on startup, automatically stamps `001_initial_schema` if unversioned tables exist, and executes `command.upgrade(alembic_cfg, "head")` to guarantee that both cloud PostgreSQL (Supabase / Render) and local SQLite instances are always synchronized at head without manual intervention or data loss.
+  - **Automated Startup Migration & Zero-Downtime Synchronization**: `init_db()` in `backend/app/db.py` inspects existing database tables on startup, automatically stamps `001_initial_schema` if unversioned tables exist, and executes `command.upgrade(alembic_cfg, "head")` to ensure that both cloud PostgreSQL (Supabase / Render) and local SQLite instances are always synchronized at head without manual intervention or data loss.
 
 ---
 
@@ -221,15 +221,15 @@ flowchart TD
 ### Improvement 3: Claim-Level Evidence Grounding, Immutable Versions & Auditability
 
 - **Hybrid Deterministic & Multimodal Analysis Pipeline**:
-  - **Deterministic Rule Engine**: High-speed regex checks guarantee zero false negatives for prohibited terminology, missing disclaimers, sensitive credentials, and exact phrase violations.
-  - **Gemini 3.6/3.8 Flash Analyzer**: Evaluates tone, claim validity, competitor comparisons, and qualitative nuance using strict JSON schema output (`response_schema`).
+  - **Deterministic Rule Engine**: Fast, compiled regular expression patterns catch known prohibited terminology, missing disclaimers, sensitive credentials, and exact phrase violations before AI evaluation, backed by dedicated regression test suites.
+  - **Gemini Multimodal Analyzer**: Evaluates tone, claim validity, competitor comparisons, and qualitative nuance using strict JSON schema output (`response_schema`). Uses local default `gemini-3.8-flash`, production model `gemini-3.6-flash`, and high-availability fallback `gemini-3.1-flash-lite` (with standalone deterministic rule-engine completion if AI services are unavailable or unconfigured).
   - **Grounding Validator**: Model-generated citations are cross-referenced against server-side guidelines and approved facts. Fabricated guidelines or facts are stripped; quotes not present in the source text are downgraded.
 - **Immutable Revision Lifecycle**:
   - Submissions follow an append-only revision tree (`v1`, `v2`, `v3`...).
   - Editing content creates a new version snapshot while permanently preserving prior versions, runs, and findings.
 - **Permanent Knowledge Snapshotting**:
   - Every analysis run records an immutable `knowledge_snapshot` containing the exact active guidelines, facts, and terms active at that moment.
-  - Guarantees complete historical explainability even if guidelines or facts evolve later.
+  - Preserves historical explainability even if guidelines or facts evolve later.
 - **Human Sovereign Authority**:
   - The AI analysis engine only provides decision support.
   - Authoritative status decisions (`approved`, `rejected`, `revisions_requested`) require an authorized human Compliance Auditor.
@@ -408,7 +408,7 @@ Inkloom AI uses typed environment configuration via Pydantic Settings (`backend/
 | `ENVIRONMENT` | `string` | **No** | `development` | Runtime mode: `development`, `test`, or `production`. In production, strict security validations are enforced on `JWT_SECRET_KEY`. |
 | `DATABASE_URL` | `string` | **No** | `sqlite:///./inkloom_dev.db` | Database connection string. For PostgreSQL, use `postgresql+psycopg://user:pass@host:5432/dbname`. For SQLite, use `sqlite:///./inkloom_dev.db`. |
 | `GEMINI_API_KEY` | `string` | **No** | `None` | Google Gemini API key. If omitted, AI analysis is disabled (`ai_status="disabled"`), and the deterministic rule engine runs standalone. |
-| `GEMINI_MODEL` | `string` | **No** | `gemini-3.8-flash` | Gemini model ID. Render production runs `gemini-3.6-flash`. Automatic fallback to `gemini-3.1-flash-lite` on quota/503. |
+| `GEMINI_MODEL` | `string` | **No** | `gemini-3.8-flash` | Primary Gemini model ID. Local development defaults to `gemini-3.8-flash` (defined in `backend/app/config.py`). Live Render production is configured with `gemini-3.6-flash`. The analysis and vision services automatically fall back to `gemini-3.1-flash-lite` on transient 503 or quota exhaustion. |
 | `GEMINI_TIMEOUT_SECONDS` | `float` | **No** | `30.0` | Timeout in seconds for external Gemini API calls before triggering fallback or timing out. |
 | `CORS_ORIGINS` | `string` | **No** | `http://localhost:5173,https://inkloom-ai-wheat.vercel.app` | Comma-separated list of allowed frontend origins for CORS headers. Regex `^https:\/\/.*\.vercel\.app$` is also permitted. |
 | `JWT_SECRET_KEY` | `string` | **In Production** | Auto-generated random in dev | Cryptographic secret key used to sign and verify session JWTs using HMAC-SHA256 (`HS256`). In production, this **must** be an independently generated strong secret of $\ge 32$ characters. Known static development defaults are strictly blocked. Generate with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`. |
@@ -552,63 +552,88 @@ python scripts/live_ocr_and_logo_gap_closure.py
 
 ## 7. API Endpoints Reference
 
-The backend exposes **31 active REST endpoints** across authentication, brand management, document ingestion, content workflows, and system health:
+The backend exposes **31 active REST endpoints** implementing a multi-layered security model that distinguishes public access, demo-compatible access, authenticated tenant-scoped access, and role-enforced operations:
 
-### System & Health
+### Security & Access Control Model
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `GET` | `/health` | Public | Root system health check (DB connectivity & AI readiness). |
-| `GET` | `/api/health` | Public | Namespaced API health check. |
+1. **Public Endpoints (Unauthenticated)**:
+   - System health probes (`/health`, `/api/health`), self-registration (`/api/auth/register`), authentication (`/api/auth/login`), workspace prefix lookup (`/api/auth/organisations/lookup`), and document/OCR extraction (`/api/documents/extract`).
+   - Require no `Authorization` header.
 
-### Authentication & Organisation Team Management
+2. **Demo-Compatible & Tenant-Scoped Endpoints (`Depends(get_optional_user)`)**:
+   - **Without a Bearer Token (Unauthenticated / Demo Mode)**: Operations are permitted **strictly and exclusively on the public demo brand (`is_demo=True`, e.g. LumaCare)**. Unauthenticated users cannot read, create, or modify content or rules belonging to any private organisation.
+   - **With a Valid Bearer Token (Authenticated Mode)**: Scoped strictly to the caller's `organisation_id` (plus public demo brands). Attempting to query, view, analyze, or review submissions, brands, or assets of another organisation returns standard `404 Not Found` (preventing resource existence disclosure).
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `POST` | `/api/auth/register` | Public | Register a new organisation and create its initial Brand Manager (`admin`). |
-| `POST` | `/api/auth/login` | Public | Authenticate with email/password and receive signed JWT Bearer token. |
-| `GET` | `/api/auth/me` | Authenticated | Retrieve current authenticated user profile, role, and organisation. |
-| `GET` | `/api/auth/members` | Brand Manager (`admin`) | List all members belonging to the caller's organisation. |
-| `POST` | `/api/auth/members` | Brand Manager (`admin`) | Add a new team member with assigned role (`admin`, `editor`, `reviewer`). |
-| `GET` | `/api/auth/organisations/lookup` | Public | Search organisation names by prefix for guided login. |
+3. **Role-Enforced Operations**:
+   - **Route-Level Dependency (`Depends(require_admin)`)**:
+     - Enforces `current_user.role == UserRole.ADMIN` (Brand Manager). Non-admin callers receive `403 Forbidden`.
+     - Required for: inviting team members (`POST /api/auth/members`), provisioning new brand workspaces (`POST /api/brands`), updating brand profiles (`PATCH /api/brands/{id}`), and adding/deleting compliance guidelines (`/guidelines`), approved facts (`/facts`), terminology rules (`/terms`), and visual brand assets (`/assets`).
+   - **Service-Level RBAC Enforcement**:
+     - `POST /api/submissions/{id}/review-request`: Permitted for Content Creators (`editor`) and Brand Managers (`admin`). Compliance Auditors (`reviewer`) attempting to request review receive `403 Forbidden`.
+     - `POST /api/submissions/{id}/reviews`: Permitted for Compliance Auditors (`reviewer`) and Brand Managers (`admin`). Content Creators (`editor`) attempting to record review decisions receive `403 Forbidden`.
 
-### Brand Workspaces & Knowledge Management
+---
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `GET` | `/api/brands` | Authenticated / Public | List accessible brand workspaces for caller's organisation. |
-| `POST` | `/api/brands` | Brand Manager (`admin`) | Create a new brand workspace. |
-| `GET` | `/api/brands/{identifier}` | Authenticated / Public | Retrieve complete brand knowledge (guidelines, facts, terms, assets) by ID or slug with tenant isolation. |
-| `PATCH` | `/api/brands/{brand_id}` | Brand Manager (`admin`) | Update brand metadata (mission, tone, industry). |
-| `POST` | `/api/brands/{brand_id}/guidelines` | Brand Manager (`admin`) | Add an active compliance guideline. |
-| `DELETE` | `/api/brands/{brand_id}/guidelines/{code}` | Brand Manager (`admin`) | Deactivate a compliance guideline. |
-| `POST` | `/api/brands/{brand_id}/facts` | Brand Manager (`admin`) | Add an approved factual statement. |
-| `DELETE` | `/api/brands/{brand_id}/facts/{code}` | Brand Manager (`admin`) | Deactivate an approved fact. |
-| `POST` | `/api/brands/{brand_id}/terms` | Brand Manager (`admin`) | Add a preferred or prohibited terminology rule. |
-| `DELETE` | `/api/brands/{brand_id}/terms/{code}` | Brand Manager (`admin`) | Deactivate a terminology rule. |
-| `GET` | `/api/brands/{brand_id}/assets` | Authenticated / Public | List visual brand assets (logos, palettes) for a brand. |
-| `POST` | `/api/brands/{brand_id}/assets` | Brand Manager (`admin`) | Add a visual brand asset. |
-| `DELETE` | `/api/brands/{brand_id}/assets/{asset_id}` | Brand Manager (`admin`) | Delete a visual brand asset. |
+### System & Health (2 Endpoints)
 
-### Document Extraction & Visual Analysis
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `GET` | `/health` | Public | None | Root system health check (database connection & Gemini readiness). |
+| `GET` | `/api/health` | Public | None | Namespaced API health check probe. |
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `POST` | `/api/documents/extract` | Authenticated / Public | Ingest Word (`.docx`), PDF, scanned PDF (OCR), and images (`.png`, `.jpg`). Performs text extraction, OCR, and visual logo verification. |
+### Authentication & Organisation Team Management (6 Endpoints)
 
-### Content Submissions, Workflows & Reviews
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `POST` | `/api/auth/register` | Public | None | Register a new organisation; provision initial user as Brand Manager (`admin`). |
+| `POST` | `/api/auth/login` | Public | None | Authenticate with email/password; returns signed JWT Bearer token with claims (`sub`, `org_id`, `role`, `email`). |
+| `GET` | `/api/auth/me` | Authenticated | `Depends(get_current_user)` | Retrieve current authenticated user profile, assigned role, and organisation. |
+| `GET` | `/api/auth/members` | Authenticated | `Depends(get_current_user)` | List all team members belonging to the caller's organisation. |
+| `POST` | `/api/auth/members` | Brand Manager (`admin`) | `Depends(require_admin)` | Invite / add a team member with role (`admin`, `editor`, `reviewer`) to caller's organisation. Returns 403 for non-admins. |
+| `GET` | `/api/auth/organisations/lookup` | Public | None | Prefix search for organisation names and slugs without exposing user accounts or credentials. |
 
-| Method | Endpoint | Auth Required | Description |
-|---|---|---|---|
-| `GET` | `/api/submissions` | Authenticated / Public | List all submissions for the active brand workspace. |
-| `POST` | `/api/submissions` | Authenticated / Public | Create a new submission draft and initial version `v1`. |
-| `GET` | `/api/submissions/{id}` | Authenticated / Public | Retrieve full submission details, version history, and analysis runs. |
-| `POST` | `/api/submissions/{id}/versions` | Authenticated / Public | Create a new immutable content version (`v2`, `v3`...). |
-| `POST` | `/api/submissions/{id}/analyze` | Authenticated / Public | Run hybrid compliance analysis on current version. |
-| `POST` | `/api/submissions/{id}/review-request` | Authenticated / Public | Submit an analyzed version for formal human review. |
-| `POST` | `/api/submissions/{id}/reviews` | Auditor (`reviewer`) / Manager (`admin`) | Record authoritative human review decision (`approved`, `rejected`, `revisions_requested`). |
-| `GET` | `/api/submissions/{id}/audit` | Authenticated / Public | Retrieve complete chronological audit trail. |
-| `GET` | `/api/analysis-runs/{id}` | Authenticated / Public | Retrieve details of a specific historical analysis run. |
+### Brand Workspaces & Knowledge Management (13 Endpoints)
+
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `GET` | `/api/brands` | Demo / Authenticated | `Depends(get_optional_user)` | List accessible brands: returns public demo brand if unauthenticated; returns demo brand + caller's organisation brands if authenticated. |
+| `POST` | `/api/brands` | Brand Manager (`admin`) | `Depends(require_admin)` | Create a new brand workspace within caller's organisation. Returns 403 for non-admins. |
+| `GET` | `/api/brands/{identifier}` | Demo / Authenticated | `Depends(get_optional_user)` + `_verify_brand_access` | Retrieve brand details, guidelines, facts, terms, and assets by slug or UUID. Public for demo brand; returns 404 for cross-tenant access. |
+| `PATCH` | `/api/brands/{brand_id}` | Brand Manager (`admin`) | `Depends(require_admin)` | Update brand name, industry, description, or voice summary. Returns 403 for non-admins or 404 for non-tenant brand. |
+| `POST` | `/api/brands/{brand_id}/guidelines` | Brand Manager (`admin`) | `Depends(require_admin)` | Add a compliance guideline rule to the brand workspace. Returns 403 for non-admins. |
+| `DELETE` | `/api/brands/{brand_id}/guidelines/{code}` | Brand Manager (`admin`) | `Depends(require_admin)` | Deactivate a compliance guideline by code. Returns 403 for non-admins. |
+| `POST` | `/api/brands/{brand_id}/facts` | Brand Manager (`admin`) | `Depends(require_admin)` | Add an approved factual statement with source citation. Returns 403 for non-admins. |
+| `DELETE` | `/api/brands/{brand_id}/facts/{code}` | Brand Manager (`admin`) | `Depends(require_admin)` | Deactivate an approved factual statement by code. Returns 403 for non-admins. |
+| `POST` | `/api/brands/{brand_id}/terms` | Brand Manager (`admin`) | `Depends(require_admin)` | Add a preferred or prohibited terminology rule. Returns 403 for non-admins. |
+| `DELETE` | `/api/brands/{brand_id}/terms/{code}` | Brand Manager (`admin`) | `Depends(require_admin)` | Deactivate a terminology rule by code. Returns 403 for non-admins. |
+| `GET` | `/api/brands/{brand_id}/assets` | Demo / Authenticated | `Depends(get_optional_user)` + `_verify_brand_access` | List visual brand assets (logos, palettes) for brand. Public for demo brand; scoped to tenant for custom brands. |
+| `POST` | `/api/brands/{brand_id}/assets` | Brand Manager (`admin`) | `Depends(require_admin)` | Add a visual brand asset (approved logo specs, color swatches). Returns 403 for non-admins. |
+| `DELETE` | `/api/brands/{brand_id}/assets/{asset_id}` | Brand Manager (`admin`) | `Depends(require_admin)` | Deactivate a visual brand asset by UUID. Returns 403 for non-admins. |
+
+### Document Extraction & Visual Analysis (1 Endpoint)
+
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `POST` | `/api/documents/extract` | Public / Demo-Compatible | `Depends(get_optional_user)` | Multipart ingestion for Word (`.docx`), PDF, scanned PDF (OCR fallback), and promotional images (`.png`, `.jpg`). Returns extracted text, OCR metadata, and visual logo verification. |
+
+### Content Submissions, Workflows & Reviews (8 Endpoints)
+
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `GET` | `/api/submissions` | Demo / Authenticated | `Depends(get_optional_user)` + tenant filtering | List submissions for brand workspace. Public for demo brand; strictly scoped to caller's organisation for tenant brands. |
+| `POST` | `/api/submissions` | Demo / Creator or Manager | `Depends(get_optional_user)` + `verify_brand_access` | Create a new submission draft and initial version `v1`. Permitted on demo brand; requires tenant membership on custom brands. |
+| `GET` | `/api/submissions/{id}` | Demo / Authenticated | `Depends(get_optional_user)` + `verify_submission_access` | Retrieve full submission details, immutable version history, and analysis runs. Returns 404 for cross-tenant access. |
+| `POST` | `/api/submissions/{id}/versions` | Demo / Creator or Manager | `Depends(get_optional_user)` + `verify_submission_access` | Create a new immutable content version snapshot (`v2`, `v3`...). |
+| `POST` | `/api/submissions/{id}/analyze` | Demo / Creator or Manager | `Depends(get_optional_user)` + `verify_submission_access` | Run hybrid deterministic rule-engine and Gemini compliance analysis on the active version. |
+| `POST` | `/api/submissions/{id}/review-request` | Creator (`editor`) or Manager (`admin`) | `Depends(get_optional_user)` + service-level check | Transition analyzed content to `in_review`. Auditors (`reviewer`) receive 403 Forbidden. |
+| `POST` | `/api/submissions/{id}/reviews` | Auditor (`reviewer`) or Manager (`admin`) | `Depends(get_optional_user)` + service-level check | Record authoritative human review verdict (`approved`, `rejected`, `revisions_requested`). Content Creators (`editor`) receive 403 Forbidden. |
+| `GET` | `/api/submissions/{id}/audit` | Demo / Authenticated | `Depends(get_optional_user)` + `verify_submission_access` | Retrieve complete chronological, append-only audit trail for submission. |
+
+### Historical Analysis Runs (1 Endpoint)
+
+| Method | Endpoint | Access Level | Authorization Enforcement | Description |
+|---|---|---|---|---|
+| `GET` | `/api/analysis-runs/{id}` | Demo / Authenticated | `Depends(get_optional_user)` + `verify_submission_access` | Retrieve complete findings, confidence scores, and immutable knowledge snapshot of a specific historical run. |
 
 ---
 
@@ -655,7 +680,7 @@ Inkloom AI includes pre-seeded demo accounts and one-click role switching on the
 - **Solution**: Generate a strong secret with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'` and configure it in your production host environment (e.g. Render Dashboard).
 
 ### 5. Gemini API 429 Quota or Unavailable (503)
-- **Behavior**: Inkloom AI is designed with graceful resilience. If the primary Gemini model (`gemini-3.6-flash` / `gemini-3.8-flash`) returns a 503 error, the backend retries once, then automatically falls back to `gemini-3.1-flash-lite`. If no API key is provided or the quota is completely exhausted, the system marks `ai_status="disabled"` and completes the full analysis using the deterministic rule engine.
+- **Behavior**: Inkloom AI is engineered for high availability and graceful fallback. If the configured primary model (`gemini-3.6-flash` in Render production or `gemini-3.8-flash` in local development) encounters a transient 503 error, the backend retries once after a 1.5s backoff, then automatically falls back to `gemini-3.1-flash-lite`. If no API key is provided, credentials fail, or external quotas are exhausted, the system marks `ai_status="disabled"` (or `"unavailable"`) and completes the full compliance analysis using the standalone deterministic rule engine.
 
 ### 6. CORS Errors During Local Development
 - **Cause**: Local frontend runs on a port not listed in `CORS_ORIGINS`.
